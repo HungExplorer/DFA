@@ -98,11 +98,10 @@
     let values = [];
     let startState = "";
     let finalStates = [];
-    let transitionTable = {}; // Cấu trúc: { state: { symbol: nextState, ... }, ... }
+    let transitionTable = {}; // { state: { symbol: nextState, ... }, ... }
     
     // Khi người dùng nhấn "Generate Transition Table"
     document.getElementById("generateTableBtn").addEventListener("click", function(){
-      // Đọc states và values
       states = document.getElementById("statesInput").value.trim().split(/\s+/);
       values = document.getElementById("valuesInput").value.trim().split(/\s+/);
       
@@ -114,7 +113,6 @@
       states.forEach(function(state){
         tableHtml += "<tr><td>" + state + "</td>";
         values.forEach(function(val){
-          // Mỗi ô nhập có id dạng: trans-{state}-{val}
           tableHtml += `<td><input type="text" id="trans-${state}-${val}" style="width:90px" placeholder="next state"></td>`;
         });
         tableHtml += "</tr>";
@@ -126,25 +124,19 @@
     
     // Khi người dùng nhấn "Save DFA Settings"
     document.getElementById("saveDFABtn").addEventListener("click", function(){
-      // Lấy start state và final states từ giao diện
       startState = document.getElementById("startStateInput").value.trim();
       finalStates = document.getElementById("finalStatesInput").value.trim().split(/\s+/);
       
-      // Xây dựng transition table theo dữ liệu người dùng đã nhập
       transitionTable = {};
       states.forEach(function(state){
         transitionTable[state] = {};
         values.forEach(function(val){
           let key = `trans-${state}-${val}`;
           let nextMove = document.getElementById(key).value.trim();
-          // Nếu bỏ trống, đặt là null (không có chuyển tiếp)
           transitionTable[state][val] = (nextMove === "" ? null : nextMove);
         });
       });
-      
       console.log("Transition Table:", transitionTable);
-      
-      // Sau khi lưu, vẽ lại DFA
       redrawDFA();
     });
     
@@ -155,7 +147,6 @@
         document.getElementById("result").innerText = "Please enter an input string.";
         return;
       }
-      
       let currentState = startState;
       let valid = true;
       for(let ch of inputStr) {
@@ -172,17 +163,12 @@
         }
         currentState = nextState;
       }
-      
       if(valid){
-        if(finalStates.includes(currentState)){
-          document.getElementById("result").innerText = "✅ ACCEPT";
-        } else {
-          document.getElementById("result").innerText = "❌ REJECT";
-        }
+        document.getElementById("result").innerText = finalStates.includes(currentState) ? "✅ ACCEPT" : "❌ REJECT";
       }
     });
     
-    // Reset button: xóa tất cả ô nhập và bảng dữ liệu
+    // Reset button
     document.getElementById("resetBtn").addEventListener("click", function(){
       document.getElementById("statesInput").value = "";
       document.getElementById("valuesInput").value = "";
@@ -200,8 +186,9 @@
     });
     
     // =======================================================
-    // p5.js để vẽ DFA dựa trên dữ liệu đã nhập
-    let statePositions = {};
+    // p5.js - Vẽ DFA và hỗ trợ kéo node (drag & drop)
+    let statePositions = {}; // Lưu vị trí mỗi state
+    let draggedState = null; // Tên state đang được kéo
     
     function setup() {
       let canvas = createCanvas(windowWidth * 0.6, windowHeight);
@@ -210,26 +197,27 @@
       noLoop();
     }
     
-    // Tính vị trí các state trên một vòng tròn
+    // Nếu chưa có vị trí của state (chưa kéo), tự tính trên vòng tròn
     function computeStatePositions() {
-      statePositions = {};
-      let centerX = width / 2;
-      let centerY = height / 2;
-      let r = min(width, height) / 3;
-      let n = states.length;
-      for (let i = 0; i < n; i++) {
-        let angle = map(i, 0, n, 0, TWO_PI);
-        statePositions[states[i]] = {
-          x: centerX + r * cos(angle),
-          y: centerY + r * sin(angle)
-        };
+      if(Object.keys(statePositions).length === 0) {
+        let centerX = width / 2;
+        let centerY = height / 2;
+        let r = min(width, height) / 3;
+        let n = states.length;
+        for (let i = 0; i < n; i++) {
+          let angle = map(i, 0, n, 0, TWO_PI);
+          statePositions[states[i]] = {
+            x: centerX + r * cos(angle),
+            y: centerY + r * sin(angle)
+          };
+        }
       }
     }
     
-    // Hàm vẽ mũi tên chuyển tiếp bình thường giữa các state
+    // Hàm vẽ mũi tên chuyển tiếp giữa các state
     function drawArrow(x1, y1, x2, y2, label) {
       let angle = atan2(y2 - y1, x2 - x1);
-      let r = 25; // bán kính node, vì node được vẽ với đường kính 50
+      let r = 25; // bán kính node
       let newX1 = x1 + r * cos(angle);
       let newY1 = y1 + r * sin(angle);
       let newX2 = x2 - r * cos(angle);
@@ -246,7 +234,6 @@
       triangle(0, 0, -10, 5, -10, -5);
       pop();
       
-      // Vẽ label ở giữa đường mũi tên
       let mx = (newX1 + newX2) / 2;
       let my = (newY1 + newY2) / 2;
       let offset = 10;
@@ -263,31 +250,25 @@
     
     // Hàm vẽ self-loop cho state
     function drawSelfLoop(x, y, label) {
-      // x, y: tâm của node (state)
-      // label: chuỗi các ký hiệu đã được ghép với dấu phẩy, ví dụ "a,b"
       stroke(0);
       strokeWeight(1);
       noFill();
       
-      let r = 25;                // bán kính của node
-      let loopRadius = 40;       // bán kính vòng cung (có thể chỉnh nếu cần)
+      let r = 25;           // bán kính của node
+      let loopRadius = 40;  // bán kính của cung self-loop
       let centerArcX = x;
-      let centerArcY = y - r - 10; // đặt vòng cung phía trên node
+      let centerArcY = y - r - 10; // vòng cung đặt phía trên node
       
       let startAngle = 0.8 * PI;
       let endAngle = 2.2 * PI;
       
-      // Vẽ vòng cung của self-loop
       arc(centerArcX, centerArcY, loopRadius, loopRadius, startAngle, endAngle);
       
-      // Tính điểm cuối của cung (dùng để đặt mũi tên)
       let endX = centerArcX + (loopRadius / 2) * cos(endAngle);
       let endY = centerArcY + (loopRadius / 2) * sin(endAngle);
       
-      // Tính góc từ điểm cuối cung về tâm node, để mũi tên chĩa về node
+      // Tính góc sao cho mũi tên self-loop "chĩa" về node
       let arrowAngle = atan2(y - endY, x - endX);
-      
-      // Dịch mũi tên về gần node để đầu mũi tên chạm vào biên node
       let arrowLength = 10;
       let offsetBack = 5;
       let arrowX = endX + cos(arrowAngle) * (arrowLength - offsetBack);
@@ -296,35 +277,37 @@
       push();
       translate(arrowX, arrowY);
       rotate(arrowAngle);
-      fill(0);  // Mũi tên màu đen
+      fill(0);
       stroke(0);
       triangle(0, 0, -10, 5, -10, -5);
       pop();
       
-      // Vẽ label cho self-loop.
-      // Ở đây, label đã là chuỗi dạng "a,b" nếu có nhiều giá trị.
       noStroke();
       fill(0);
       textSize(14);
       textAlign(CENTER, CENTER);
       
-      // Tính điểm giữa của cung
+      // Xử lý label: nếu có nhiều ký hiệu, ghép chúng bằng dấu phẩy
+      let processedLabel = label;
+      if (!label.includes(",") && label.length > 1) {
+        processedLabel = label.split('').join(',');
+      }
+      // Đặt label tại giữa cung với offset dọc điều chỉnh để tránh chồng lên
       let midAngle = (startAngle + endAngle) / 2;
       let midX = centerArcX + (loopRadius / 2) * cos(midAngle);
       let midY = centerArcY + (loopRadius / 2) * sin(midAngle);
-      // Nếu label có nhiều ký tự (chứa dấu phẩy) thì dịch xuống thêm để không bị chồng
-      let offsetY = label.includes(",") ? 15 : 10;
-      text(label, midX, midY - offsetY);
+      let offsetY = processedLabel.includes(",") ? 15 : 10;
+      text(processedLabel, midX, midY - offsetY);
     }
     
-    // Hàm vẽ lại DFA theo cấu hình đã lưu
+    // Hàm vẽ lại toàn bộ DFA
     function redrawDFA() {
       clear();
       background(240);
       if (states.length === 0) return;
       computeStatePositions();
       
-      // Xử lý chuyển tiếp: thu thập self-loop và vẽ chuyển tiếp bình thường
+      // Xử lý chuyển tiếp và thu thập các self-loop
       let loopLabels = {}; // key: state, value: mảng các ký hiệu tự chuyển
       for (let state of states) {
         for (let symbol of values) {
@@ -344,7 +327,7 @@
         }
       }
       
-      // Vẽ self-loop cho mỗi state có self-loop, ghép các ký hiệu bằng dấu phẩy
+      // Vẽ self-loop cho các state có self-loop
       for (let state in loopLabels) {
         let pos = statePositions[state];
         let labelStr = loopLabels[state].join(",");
@@ -376,7 +359,32 @@
         strokeWeight(3);
         noFill();
         ellipse(pos.x, pos.y, 60, 60);
+        ellipse(pos.x, pos.y, 60, 60);
       }
+    }
+    
+    // Hỗ trợ kéo node (drag & drop)
+    let dragged = null;
+    function mousePressed() {
+      // Kiểm tra nếu chuột nhấn gần 1 node nào (khoảng cách < 25)
+      for (let state in statePositions) {
+        let pos = statePositions[state];
+        if (dist(mouseX, mouseY, pos.x, pos.y) < 25) {
+          dragged = state;
+          break;
+        }
+      }
+    }
+    
+    function mouseDragged() {
+      if (dragged) {
+        statePositions[dragged] = { x: mouseX, y: mouseY };
+        redrawDFA();
+      }
+    }
+    
+    function mouseReleased() {
+      dragged = null;
     }
     
     function windowResized() {
