@@ -54,16 +54,16 @@
   <!-- Bên trái: Settings -->
   <div id="settings">
     <h2>DFA Settings</h2>
-    <label>States (vd: q0 q1 q2 q3):</label>
+    <label>States (Q):</label>
     <input type="text" id="statesInput" placeholder="Enter states separated by space">
     
-    <label>Input Values (vd: a b):</label>
+    <label>Input Values (Σ):</label>
     <input type="text" id="valuesInput" placeholder="Enter input symbols separated by space">
     
-    <label>Start State (ví dụ: q0):</label>
+    <label>Initial State:</label>
     <input type="text" id="startStateInput" placeholder="Enter start state">
     
-    <label>Accepting Final State(s) (vd: q2 or q1 q2):</label>
+    <label>Final State(s) (F):</label>
     <input type="text" id="finalStatesInput" placeholder="Enter accepting state(s)">
     
     <!-- Nút tạo bảng transition -->
@@ -73,7 +73,7 @@
     <div id="transitionTableDiv"></div>
     
     <!-- Nút lưu DFA sau khi nhập bảng chuyển tiếp -->
-    <button id="saveDFABtn">Save DFA Settings</button>
+    <button id="saveDFABtn">Visualize DFA</button>
     
     <hr>
     
