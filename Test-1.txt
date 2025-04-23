@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DFA / NFA IDE Simulator</title>
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <!-- Font Awesome cho icon -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    /* ===== Grid layout ===== */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      display: grid;
+      height: 100vh;
+      grid-template-rows: 50px 1fr;
+      grid-template-columns: 200px 300px 1fr;
+      grid-template-areas:
+        "toolbar toolbar toolbar"
+        "sidebar settings canvas";
+    }
+    #toolbar {
+      grid-area: toolbar;
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 10px;
+    }
+    #sidebar {
+      grid-area: sidebar;
+      background: #2c3e50;
+      color: #ecf0f1;
+      padding: 10px;
+      overflow-y: auto;
+    }
+    #settings {
+      grid-area: settings;
+      background: #f7f9fa;
+      padding: 20px;
+      overflow-y: auto;
+      border-right: 1px solid #ccc;
+    }
+    #canvasContainer {
+      grid-area: canvas;
+      position: relative;
+      background: #fafafa;
+    }
+
+    /* ===== Toolbar & Sidebar ===== */
+    #toolbar button {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: #34495e;
+    }
+    #toolbar button:hover {
+      color: #3498db;
+    }
+    .mode-btn {
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0;
+      background: #34495e;
+      color: #ecf0f1;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+    }
+    .mode-btn.active {
+      background: #1abc9c;
+    }
+
+    /* ===== Settings panel ===== */
+    #settings h2 {
+      margin-top: 0;
+    }
+    #settings label {
+      display: block;
+      margin-top: 12px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    #settings input[type="text"] {
+      width: 100%;
+      margin-top: 4px;
+      padding: 6px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #settings button {
+      margin-top: 10px;
+      padding: 6px 12px;
+      border: none;
+      background: #3b82f6;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #settings button:hover {
+      background: #2563eb;
+    }
+    #transitionTableDiv {
+      margin-top: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid #999;
+      padding: 4px;
+      text-align: center;
+    }
+    #result {
+      margin-top: 12px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button id="btnSimulate"   title="Simulate"><i class="fas fa-play"></i></button>
+    <button id="btnStep"       title="Step-by-step"><i class="fas fa-forward-step"></i></button>
+    <button id="btnResetAll"   title="Reset"><i class="fas fa-undo"></i></button>
+    <button id="btnDownload"   title="Download DFA"><i class="fas fa-download"></i></button>
+    <button id="btnExportJSON" title="Export JSON"><i class="fas fa-file-export"></i></button>
+  </div>
+
+  <!-- Sidebar: Chọn mode -->
+  <div id="sidebar">
+    <h3>Mode</h3>
+    <button class="mode-btn active" data-mode="DFA">DFA</button>
+    <button class="mode-btn"        data-mode="NFA">NFA</button>
+    <button class="mode-btn"        data-mode="Minimize">Minimize</button>
+    <button class="mode-btn"        data-mode="Equiv">Equivalence</button>
+  </div>
+
+  <!-- Settings/Input panel -->
+  <div id="settings">
+    <h2>DFA Settings</h2>
+
+    <label>States (vd: q0 q1 q2 q3):</label>
+    <input type="text" id="statesInput" placeholder="Enter states separated by space">
+
+    <label>Input Values (vd: a b):</label>
+    <input type="text" id="valuesInput" placeholder="Enter input symbols separated by space">
+
+    <label>Start State (ví dụ: q0):</label>
+    <input type="text" id="startStateInput" placeholder="Enter start state">
+
+    <label>Accepting Final State(s) (vd: q2 or q1 q2):</label>
+    <input type="text" id="finalStatesInput" placeholder="Enter accepting state(s)">
+
+    <button id="generateTableBtn">Generate Transition Table</button>
+    <div id="transitionTableDiv"></div>
+    <button id="saveDFABtn">Save DFA Settings</button>
+
+    <hr>
+
+    <label>Input String to Check:</label>
+    <input type="text" id="inputString" placeholder="Enter input string">
+    <button id="checkStringBtn">Check String</button>
+    <button id="resetBtn">Reset Settings</button>
+
+    <div id="result"></div>
+  </div>
+
+  <!-- Canvas của p5.js -->
+  <div id="canvasContainer"></div>
+
+  <script>
+    // ===== Global variables =====
+    let currentMode = 'DFA';
+    let states = [], values = [], startState = '', finalStates = [];
+    let transitionTable = {};
+    let simulationCurrentState = null, simulationIndex = 0, simulationInput = '';
+    let simulationTimer = null, simulationFinalColor = null;
+    let statePositions = {};
+
+    // ===== Toolbar events =====
+    document.getElementById('btnSimulate').onclick = () => {
+      document.getElementById('checkStringBtn').click();
+    };
+    document.getElementById('btnStep').onclick = () => {
+      // có thể implement step-by-step sau
+      simulateDFA();
+    };
+    document.getElementById('btnResetAll').onclick = () => {
+      document.getElementById('resetBtn').click();
+    };
+    document.getElementById('btnDownload').onclick = () => {
+      saveCanvas('dfa', 'png');
+    };
+    document.getElementById('btnExportJSON').onclick = () => {
+      const dfa = { states, values, startState, finalStates, transitionTable };
+      const dataStr = JSON.stringify(dfa, null, 2);
+      const blob = new Blob([dataStr], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'dfa.json'; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // ===== Mode buttons =====
+    document.querySelectorAll('.mode-btn').forEach(btn =>
+      btn.addEventListener('click', e => {
+        document.querySelectorAll('.mode-btn')
+                .forEach(x => x.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        currentMode = e.currentTarget.dataset.mode;
+        // TODO: show/hide các setting tương ứng với mode
+      })
+    );
+
+    // ===== Generate transition table =====
+    document.getElementById("generateTableBtn").addEventListener("click", () => {
+      states = document.getElementById("statesInput").value.trim().split(/\s+/);
+      values = document.getElementById("valuesInput").value.trim().split(/\s+/);
+      let html = `<h3>Transition Table</h3><table><tr><th>State</th>`;
+      values.forEach(v=> html+=`<th>${v}</th>`);
+      html += `</tr>`;
+      states.forEach(s=>{
+        html += `<tr><td>${s}</td>`;
+        values.forEach(v=>{
+          html += `<td><input type="text" id="trans-${s}-${v}" placeholder="next state"></td>`;
+        });
+        html += `</tr>`;
+      });
+      html += `</table>`;
+      document.getElementById("transitionTableDiv").innerHTML = html;
+    });
+
+    // ===== Save DFA settings =====
+    document.getElementById("saveDFABtn").addEventListener("click", () => {
+      startState = document.getElementById("startStateInput").value.trim();
+      finalStates = document.getElementById("finalStatesInput").value.trim().split(/\s+/);
+      transitionTable = {};
+      states.forEach(s=>{
+        transitionTable[s] = {};
+        values.forEach(v=>{
+          const val = document.getElementById(`trans-${s}-${v}`).value.trim();
+          transitionTable[s][v] = val || null;
+        });
+      });
+      simulationCurrentState = startState;
+      simulationIndex = 0;
+      simulationFinalColor = null;
+      redrawDFA();
+    });
+
+    // ===== Simulate DFA =====
+    function simulateDFA() {
+      clearTimeout(simulationTimer);
+      if (!simulationInput) {
+        document.getElementById("result").innerText = "Please enter an input string.";
+        return;
+      }
+      if (simulationIndex >= simulationInput.length) {
+        const accepted = finalStates.includes(simulationCurrentState);
+        document.getElementById("result").innerText = accepted ? "✅ ACCEPT" : "❌ REJECT";
+        simulationFinalColor = accepted ? "#00cc00" : "#cc0000";
+        redrawDFA(simulationFinalColor);
+        return;
+      }
+      const ch = simulationInput.charAt(simulationIndex);
+      if (!values.includes(ch)) {
+        document.getElementById("result").innerText = `Invalid symbol: ${ch}`;
+        return;
+      }
+      const next = transitionTable[simulationCurrentState]?.[ch] || null;
+      if (!next) {
+        document.getElementById("result").innerText = `No transition from ${simulationCurrentState} on '${ch}'`;
+        simulationFinalColor = "#cc0000";
+        redrawDFA(simulationFinalColor);
+        return;
+      }
+      simulationCurrentState = next;
+      simulationIndex++;
+      redrawDFA("#ffa500");
+      simulationTimer = setTimeout(simulateDFA, 800);
+    }
+
+    document.getElementById("checkStringBtn").addEventListener("click", () => {
+      simulationInput = document.getElementById("inputString").value.trim();
+      simulationCurrentState = startState;
+      simulationIndex = 0;
+      simulationFinalColor = null;
+      document.getElementById("result").innerText = "";
+      redrawDFA();
+      simulateDFA();
+    });
+
+    // ===== Reset all =====
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      // Clear form
+      ["statesInput","valuesInput","startStateInput","finalStatesInput","inputString"].forEach(id=>{
+        document.getElementById(id).value = "";
+      });
+      document.getElementById("transitionTableDiv").innerHTML = "";
+      document.getElementById("result").innerText = "";
+      // Reset variables
+      states = []; values = []; startState = ""; finalStates = [];
+      transitionTable = {};
+      simulationInput = ""; simulationIndex = 0; simulationCurrentState = null;
+      simulationFinalColor = null; statePositions = {};
+      redrawDFA();
+    });
+
+    // ===== p5.js: vẽ DFA =====
+    function setup() {
+      const cnv = createCanvas(
+        document.getElementById("canvasContainer").offsetWidth,
+        document.getElementById("canvasContainer").offsetHeight
+      );
+      cnv.parent("canvasContainer");
+      angleMode(RADIANS);
+      noLoop();
+    }
+
+    function computeStatePositions() {
+      if (Object.keys(statePositions).length) return;
+      const cx = width/2, cy = height/2, r = min(width, height)/3;
+      states.forEach((s,i)=>{
+        const a = map(i,0,states.length,0,TWO_PI);
+        statePositions[s] = { x: cx + r*cos(a), y: cy + r*sin(a) };
+      });
+    }
+
+    function drawArrow(x1,y1,x2,y2,label) {
+      const angle = atan2(y2-y1, y2-y1 ? y2-y1 : 0);
+      const r = 25;
+      const sx = x1 + r*cos(angle), sy = y1 + r*sin(angle);
+      const ex = x2 - r*cos(angle), ey = y2 - r*sin(angle);
+      stroke(0); strokeWeight(1); line(sx,sy,ex,ey);
+      push();
+      translate(ex,ey);
+      rotate(angle);
+      fill(0); triangle(0,0,-8,5,-8,-5);
+      pop();
+      const mx = (sx+ex)/2, my = (sy+ey)/2;
+      noStroke(); fill(0); textAlign(CENTER,CENTER); text(label,mx,my-5);
+    }
+
+    function drawSelfLoop(x,y,label) {
+      stroke(0); noFill(); strokeWeight(1);
+      const r = 25, lr = 40, cx = x, cy = y - r - 10;
+      arc(cx,cy, lr, lr, 0.8*PI, 2.2*PI);
+      const mid = (0.8*PI + 2.2*PI)/2;
+      noStroke(); fill(0); textAlign(CENTER,CENTER);
+      text(label, cx + (lr/2)*cos(mid), cy + (lr/2)*sin(mid)-10);
+    }
+
+    function redrawDFA(finalColor) {
+      clear(); background(240);
+      if (!states.length) return;
+      computeStatePositions();
+      // transitions
+      const loops = {};
+      states.forEach(s=>{
+        values.forEach(v=>{
+          const nxt = transitionTable[s]?.[v] || null;
+          if (!nxt) return;
+          if (s === nxt) {
+            loops[s] = loops[s]||[];
+            loops[s].push(v);
+          } else {
+            const p1 = statePositions[s], p2 = statePositions[nxt];
+            drawArrow(p1.x,p1.y,p2.x,p2.y,v);
+          }
+        });
+      });
+      // self-loops
+      for (let s in loops) {
+        const p = statePositions[s];
+        drawSelfLoop(p.x,p.y,loops[s].join(','));
+      }
+      // nodes
+      states.forEach(s=>{
+        const p = statePositions[s];
+        if (s === simulationCurrentState && simulationIndex < simulationInput.length) {
+          stroke("#ffa500"); strokeWeight(3); fill("#ffe5b4");
+        } else if (finalColor && s === simulationCurrentState) {
+          stroke(finalColor); strokeWeight(3); fill(finalColor);
+        } else {
+          stroke(0); strokeWeight(1); fill(255);
+        }
+        ellipse(p.x,p.y,50,50);
+        noStroke(); fill(0); textAlign(CENTER,CENTER); text(s, p.x,p.y);
+      });
+      // final-state double circle
+      finalStates.forEach(s=>{
+        const p = statePositions[s];
+        if (!(finalColor && s === simulationCurrentState)) {
+          stroke(0); strokeWeight(1); noFill();
+          ellipse(p.x,p.y,60,60);
+        }
+      });
+    }
+
+    // Drag & drop
+    let dragged = null;
+    function mousePressed() {
+      for (let s in statePositions) {
+        const p = statePositions[s];
+        if (dist(mouseX,mouseY,p.x,p.y) < 25) {
+          dragged = s; break;
+        }
+      }
+    }
+    function mouseDragged() {
+      if (dragged) {
+        statePositions[dragged] = { x: mouseX, y: mouseY };
+        redrawDFA(simulationFinalColor);
+      }
+    }
+    function mouseReleased() {
+      dragged = null;
+    }
+    function windowResized() {
+      resizeCanvas(
+        document.getElementById("canvasContainer").offsetWidth,
+        document.getElementById("canvasContainer").offsetHeight
+      );
+      redrawDFA(simulationFinalColor);
+    }
+  </script>
+</body>
+</html>
