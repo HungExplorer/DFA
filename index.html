@@ -1,462 +1,368 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>DFA Interactive Checker</title>
-  <!-- Gọi thư viện p5.js -->
+  <title>DFA</title>
+  <link rel="icon" href="Symbol.png">
+  <!-- html2canvas để chụp vùng DOM thành ảnh -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- p5.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <style>
+    /* Grid layout */
     body {
+      margin: 0; padding: 0;
       font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
-      display: flex;
+      display: grid;
       height: 100vh;
+      grid-template-rows: 50px 1fr;
+      grid-template-columns: 150px 300px 1fr;
+      grid-template-areas:
+        "sidebar settings toolbar"
+        "sidebar settings canvas";
     }
-    #settings {
-      width: 35%;
-      background: #f0f0f0;
-      padding: 20px;
-      box-sizing: border-box;
-      overflow-y: auto;
-      border-right: 1px solid #ccc;
-    }
-    #canvasContainer {
-      flex: 1;
-      position: relative;
-    }
-    input[type="text"] {
-      width: 100%;
-      margin-bottom: 10px;
-      padding: 5px;
-    }
-    button {
-      margin: 5px 0;
-      padding: 5px 10px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 10px;
-    }
-    th, td {
-      border: 1px solid #999;
-      padding: 5px;
-      text-align: center;
-    }
-    #result {
-      font-weight: bold;
-      margin-top: 10px;
-    }
+    #sidebar { grid-area: sidebar; background: #2c3e50; color: #ecf0f1; padding: 10px; overflow-y: auto; }
+    #settings { grid-area: settings; background: #f7f9fa; padding: 20px; overflow-y: auto; border-right: 1px solid #ccc; }
+    #toolbar { grid-area: toolbar; background: #fff; border-bottom: 1px solid #ddd; display: flex; align-items: center; padding: 0 10px; gap: 10px; }
+    #canvasContainer { grid-area: canvas; position: relative; background: #fafafa; }
+    #toolbar button { background: none; border: none; font-size: 18px; cursor: pointer; color: #34495e; }
+    #toolbar button:hover { color: #3498db; }
+    .mode-btn { width: 100%; padding: 8px; margin: 4px 0; background: #34495e; color: #ecf0f1; border: none; cursor: pointer; text-align: left; }
+    .mode-btn.active { background: #1abc9c; }
+    #settings h2 { margin-top: 0; }
+    #settings label { display: block; margin-top: 12px; font-weight: bold; font-size: 14px; }
+    #settings input[type="text"] { width: 100%; margin-top: 4px; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    #settings button { margin-top: 10px; padding: 6px 12px; border: none; background: #3b82f6; color: white; border-radius: 4px; cursor: pointer; }
+    #settings button:hover { background: #2563eb; }
+    #saveDFABtn { display: none; }
+    #transitionTableDiv { margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #999; padding: 4px; text-align: center; }
+    #result { margin-top: 12px; font-weight: bold; }
+    /* ảnh import */
+    #importedImage { max-width: 100%; display: block; margin: 10px 0; }
   </style>
 </head>
 <body>
-  <!-- Bên trái: Settings -->
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button id="btnImportJSON" title="Import JSON"><i class="fas fa-file-import"></i></button>
+    <button id="btnDownload" title="Download DFA"><i class="fas fa-download"></i></button>
+    <button id="btnExportJSON" title="Export JSON"><i class="fas fa-file-export"></i></button>
+    <input type="file" id="fileInput" accept="application/json" style="display:none" />
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <h3>DFA Feature</h3>
+    <button class="mode-btn active" data-mode="DFA">SimuCheck</button>
+    <button class="mode-btn" data-mode="TinyFA">TiCleaner</button>
+  </div>
+
+  <!-- Settings -->
   <div id="settings">
-    <h2>DFA Settings</h2>
+    <h2>Settings</h2>
+
     <label>States (Q):</label>
     <input type="text" id="statesInput" placeholder="Enter states separated by space">
-    
+
     <label>Input Values (Σ):</label>
     <input type="text" id="valuesInput" placeholder="Enter input symbols separated by space">
-    
+
     <label>Initial State:</label>
     <input type="text" id="startStateInput" placeholder="Enter start state">
-    
+
     <label>Final State(s) (F):</label>
     <input type="text" id="finalStatesInput" placeholder="Enter accepting state(s)">
-    
-    <!-- Nút tạo bảng transition -->
+
     <button id="generateTableBtn">Generate Transition Table</button>
-    
-    <!-- Khu vực hiển thị bảng transition -->
     <div id="transitionTableDiv"></div>
-    
-    <!-- Nút lưu DFA sau khi nhập bảng chuyển tiếp -->
-    <button id="saveDFABtn">Visualize DFA</button>
-    
+    <button id="saveDFABtn">Save DFA Settings</button>
+
     <hr>
-    
+
+    <!-- Ảnh import sẽ chèn ở đây -->
+    <div id="importedImageContainer"></div>
+
     <label>Input String to Check:</label>
     <input type="text" id="inputString" placeholder="Enter input string">
     <button id="checkStringBtn">Check String</button>
-    
-    <button id="resetBtn">Reset</button>
-    
+    <button id="resetBtn">Reset Settings</button>
+
     <div id="result"></div>
   </div>
-  
-  <!-- Bên phải: Vẽ DFA bằng p5.js -->
-  <div id="canvasContainer">
-    <!-- Canvas của p5.js sẽ tự động tạo -->
-  </div>
-  
-  <!-- Script chính -->
+
+  <!-- Canvas -->
+  <div id="canvasContainer"></div>
+
   <script>
-    // Global variables lưu cấu hình DFA
-    let states = [];
-    let values = [];
-    let startState = "";
-    let finalStates = [];
-    let transitionTable = {}; // { state: { symbol: nextState, ... }, ... }
-    
-    // Biến dùng cho mô phỏng
-    let simulationCurrentState = null;
-    let simulationIndex = 0; // chỉ số ký tự hiện tại của chuỗi input
-    let simulationInput = "";
-    let simulationTimer = null;
-    
-    // Khi người dùng nhấn "Generate Transition Table"
-    document.getElementById("generateTableBtn").addEventListener("click", function(){
-      states = document.getElementById("statesInput").value.trim().split(/\s+/);
-      values = document.getElementById("valuesInput").value.trim().split(/\s+/);
-      
-      let tableHtml = "<h3>Transition Table</h3>";
-      tableHtml += "<table><tr><th>State</th>";
-      values.forEach(function(val){ tableHtml += "<th>" + val + "</th>"; });
-      tableHtml += "</tr>";
-      
-      states.forEach(function(state){
-        tableHtml += "<tr><td>" + state + "</td>";
-        values.forEach(function(val){
-          tableHtml += `<td><input type="text" id="trans-${state}-${val}" style="width:90px" placeholder="next state"></td>`;
-        });
-        tableHtml += "</tr>";
-      });
-      tableHtml += "</table>";
-      
-      document.getElementById("transitionTableDiv").innerHTML = tableHtml;
+    let states = [], values = [], startState = "", finalStates = [], transitionTable = {};
+    let simulationCurrentState = null, simulationIndex = 0, simulationInput = "", simulationTimer = null, simulationFinalColor = null;
+
+    // === IMPORT (transitionTable + startState + finalStates) ===
+    document.getElementById('btnImportJSON').onclick = () =>
+      document.getElementById('fileInput').click();
+
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        const json = JSON.parse(evt.target.result);
+        const tt = json.transitionTable || {};
+        const importedStates = Object.keys(tt);
+        const importedValues = Array.from(
+          importedStates.reduce((set, s) => {
+            Object.keys(tt[s] || {}).forEach(v => set.add(v));
+            return set;
+          }, new Set())
+        );
+        // Điền Q, Σ, Initial, Final
+        document.getElementById('statesInput').value = importedStates.join(' ');
+        document.getElementById('valuesInput').value = importedValues.join(' ');
+        document.getElementById('startStateInput').value = json.startState || '';
+        document.getElementById('finalStatesInput').value = (json.finalStates || []).join(' ');
+
+        // Sinh bảng và điền transition
+        document.getElementById('generateTableBtn').click();
+        setTimeout(() => loadTransitionTable(tt), 50);
+      };
+      reader.readAsText(file);
+      e.target.value = '';
     });
-    
-    // Khi người dùng nhấn "Save DFA Settings"
-    document.getElementById("saveDFABtn").addEventListener("click", function(){
-      startState = document.getElementById("startStateInput").value.trim();
-      finalStates = document.getElementById("finalStatesInput").value.trim().split(/\s+/);
-      
-      transitionTable = {};
-      states.forEach(function(state){
-        transitionTable[state] = {};
-        values.forEach(function(val){
-          let key = `trans-${state}-${val}`;
-          let nextMove = document.getElementById(key).value.trim();
-          transitionTable[state][val] = (nextMove === "" ? null : nextMove);
+
+    function loadTransitionTable(tt) {
+      Object.keys(tt).forEach(s => {
+        Object.keys(tt[s]).forEach(v => {
+          const cell = document.getElementById(`trans-${s}-${v}`);
+          if (cell) cell.value = tt[s][v] || '';
         });
       });
-      console.log("Transition Table:", transitionTable);
-      // Thiết lập trạng thái ban đầu cho mô phỏng
+      document.getElementById('saveDFABtn').click();
+    }
+
+    // === EXPORT (transitionTable + startState + finalStates) ===
+    document.getElementById('btnExportJSON').onclick = () => {
+      const obj = { transitionTable, startState, finalStates };
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dfa-config.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // Download chỉ canvas
+    document.getElementById('btnDownload').onclick = () => {
+      html2canvas(document.getElementById('canvasContainer')).then(canvasImg => {
+        const a = document.createElement('a');
+        a.href = canvasImg.toDataURL('image/png');
+        a.download = 'dfa.png';
+        a.click();
+      });
+    };
+
+    // Generate transition table
+    document.getElementById('generateTableBtn').addEventListener('click', () => {
+      states = document.getElementById('statesInput').value.trim().split(/\s+/);
+      values = document.getElementById('valuesInput').value.trim().split(/\s+/);
+      let html = '<table><tr><th>State</th>' + values.map(v => `<th>${v}</th>`).join('') + '</tr>';
+      states.forEach(s => {
+        html += '<tr><td>' + s + '</td>' +
+          values.map(v => `<td><input type="text" id="trans-${s}-${v}" placeholder="next state"></td>`).join('') +
+          '</tr>';
+      });
+      html += '</table>';
+      document.getElementById('transitionTableDiv').innerHTML = html;
+      document.getElementById('saveDFABtn').style.display = 'inline-block';
+    });
+
+    // Save DFA settings
+    document.getElementById('saveDFABtn').addEventListener('click', () => {
+      startState = document.getElementById('startStateInput').value.trim();
+      finalStates = document.getElementById('finalStatesInput').value.trim().split(/\s+/);
+      transitionTable = {};
+      states.forEach(s => {
+        transitionTable[s] = {};
+        values.forEach(v => {
+          transitionTable[s][v] = document.getElementById(`trans-${s}-${v}`).value.trim() || null;
+        });
+      });
       simulationCurrentState = startState;
       simulationIndex = 0;
+      simulationFinalColor = null;
       redrawDFA();
     });
-    
-    // Hàm mô phỏng chạy string theo từng bước với animation
+
+    // Simulate DFA
     function simulateDFA() {
-      // Nếu chuỗi input rỗng
-      if(simulationInput === "") {
-        document.getElementById("result").innerText = "Please enter an input string.";
+      if (!simulationInput) {
+        document.getElementById('result').innerText = 'Please enter an input string.';
         return;
       }
-      
-      // Nếu đã hết ký tự trong chuỗi, kết thúc mô phỏng
-      if(simulationIndex >= simulationInput.length) {
-        // Kiểm tra trạng thái cuối cùng có phải là final state không
-        if(finalStates.includes(simulationCurrentState)) {
-          document.getElementById("result").innerText = "✅ ACCEPT";
-          // Đánh dấu final state xanh
-          simulationFinalColor = "#00FF00";
-        } else {
-          document.getElementById("result").innerText = "❌ REJECT";
-          simulationFinalColor = "#FF0000";
-        }
-        // Vẽ lại cuối với final color
+      if (simulationIndex >= simulationInput.length) {
+        const accepted = finalStates.includes(simulationCurrentState);
+        simulationFinalColor = accepted ? '#00FF00' : '#FF0000';
         redrawDFA(simulationFinalColor);
         return;
       }
-      
-      // Lấy ký tự hiện tại
-      let ch = simulationInput.charAt(simulationIndex);
-      // Nếu ký tự không hợp lệ
-      if(!values.includes(ch)){
-        document.getElementById("result").innerText = `Invalid input symbol: ${ch}`;
+      const ch = simulationInput.charAt(simulationIndex);
+      if (!values.includes(ch)) {
+        document.getElementById('result').innerText = `Invalid input symbol: ${ch}`;
         return;
       }
-      
-      // Thực hiện chuyển trạng thái
-      let nextState = transitionTable[simulationCurrentState] ? transitionTable[simulationCurrentState][ch] : null;
-      if(nextState === null){
-        document.getElementById("result").innerText = `No transition from '${simulationCurrentState}' on input '${ch}'`;
-        // Vẽ lại trạng thái hiện tại với màu báo lỗi (đỏ)
-        redrawDFA("#FF0000");
+      const nxt = transitionTable[simulationCurrentState]?.[ch] || null;
+      if (!nxt) {
+        document.getElementById('result').innerText = `No transition from '${simulationCurrentState}' on '${ch}'`;
+        simulationFinalColor = '#FF0000';
+        redrawDFA(simulationFinalColor);
         return;
       }
-      
-      // Đánh dấu trạng thái hiện tại sẽ được highlight (màu cam nhạt)
-      simulationCurrentState = nextState;
+      simulationCurrentState = nxt;
       simulationIndex++;
-      redrawDFA("#FFA500");
-      
-      // Gọi đệ quy sau 1 giây cho bước tiếp theo
+      redrawDFA('#FFA500');
       simulationTimer = setTimeout(simulateDFA, 1000);
     }
-    
-    // Khi người dùng nhấn "Check String"
-    document.getElementById("checkStringBtn").addEventListener("click", function(){
-      // Reset kết quả và biến mô phỏng
-      simulationInput = document.getElementById("inputString").value.trim();
+    document.getElementById('checkStringBtn').addEventListener('click', () => {
+      simulationInput = document.getElementById('inputString').value.trim();
       simulationCurrentState = startState;
       simulationIndex = 0;
-      document.getElementById("result").innerText = "";
+      simulationFinalColor = null;
+      document.getElementById('result').innerText = '';
       redrawDFA();
       simulateDFA();
     });
-    
-    // Reset button
-    document.getElementById("resetBtn").addEventListener("click", function(){
-      document.getElementById("statesInput").value = "";
-      document.getElementById("valuesInput").value = "";
-      document.getElementById("startStateInput").value = "";
-      document.getElementById("finalStatesInput").value = "";
-      document.getElementById("transitionTableDiv").innerHTML = "";
-      document.getElementById("inputString").value = "";
-      document.getElementById("result").innerText = "";
-      
-      states = [];
-      values = [];
-      startState = "";
-      finalStates = [];
-      transitionTable = {};
-      
-      simulationInput = "";
-      simulationIndex = 0;
-      simulationCurrentState = null;
-      
+
+    // Reset
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      ['statesInput','valuesInput','startStateInput','finalStatesInput','inputString'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('transitionTableDiv').innerHTML = '';
+      document.getElementById('result').innerText = '';
+      document.getElementById('importedImageContainer').innerHTML = '';
+      states = []; values = []; startState = ''; finalStates = [];
+      transitionTable = {}; simulationInput = ''; simulationIndex = 0;
+      simulationCurrentState = null; simulationFinalColor = null; statePositions = {};
+      document.getElementById('saveDFABtn').style.display = 'none';
       redrawDFA();
     });
-    
-    // =======================================================
-    // p5.js - Vẽ DFA và hỗ trợ kéo node (drag & drop)
-    let statePositions = {}; // Lưu vị trí mỗi state
-    let simulationFinalColor = null; // Màu vẽ final state sau khi kết thúc mô phỏng (nếu có)
-    
+
+    // p5.js setup & drawing
+    let statePositions = {};
     function setup() {
-      let canvas = createCanvas(windowWidth * 0.6, windowHeight);
-      canvas.parent("canvasContainer");
+      let c = createCanvas(windowWidth * 0.6, windowHeight);
+      c.parent('canvasContainer');
       angleMode(RADIANS);
       noLoop();
     }
-    
-    // Nếu chưa có vị trí của state (chưa kéo), tự tính trên vòng tròn
     function computeStatePositions() {
-      if(Object.keys(statePositions).length === 0) {
-        let centerX = width / 2;
-        let centerY = height / 2;
-        let r = min(width, height) / 3;
-        let n = states.length;
-        for (let i = 0; i < n; i++) {
-          let angle = map(i, 0, n, 0, TWO_PI);
-          statePositions[states[i]] = {
-            x: centerX + r * cos(angle),
-            y: centerY + r * sin(angle)
-          };
-        }
+      if (Object.keys(statePositions).length === 0) {
+        let cx = width / 2, cy = height / 2, r = min(width, height) / 3;
+        states.forEach((s, i) => {
+          let a = map(i, 0, states.length, 0, TWO_PI);
+          statePositions[s] = { x: cx + r * cos(a), y: cy + r * sin(a) };
+        });
       }
     }
-    
-    // Hàm vẽ mũi tên chuyển tiếp giữa các state
-    function drawArrow(x1, y1, x2, y2, label) {
-      let angle = atan2(y2 - y1, x2 - x1);
-      let r = 25; // bán kính node
-      let newX1 = x1 + r * cos(angle);
-      let newY1 = y1 + r * sin(angle);
-      let newX2 = x2 - r * cos(angle);
-      let newY2 = y2 - r * sin(angle);
-      
-      stroke(0);
-      strokeWeight(1);
-      fill(0);
-      line(newX1, newY1, newX2, newY2);
-      
-      push();
-      translate(newX2, newY2);
-      rotate(angle);
-      triangle(0, 0, -10, 5, -10, -5);
+    function drawArrow(x1, y1, x2, y2, l) {
+      let a = atan2(y2 - y1, x2 - x1), r = 25;
+      let sx = x1 + r * cos(a), sy = y1 + r * sin(a),
+          ex = x2 - r * cos(a), ey = y2 - r * sin(a);
+      stroke(0); strokeWeight(1); line(sx, sy, ex, ey);
+      push(); translate(ex, ey); rotate(a);
+      fill(0); triangle(0, 0, -10, 5, -10, -5);
       pop();
-      
-      let mx = (newX1 + newX2) / 2;
-      let my = (newY1 + newY2) / 2;
-      let offset = 10;
-      let perpAngle = angle - HALF_PI;
-      let labelX = mx + offset * cos(perpAngle);
-      let labelY = my + offset * sin(perpAngle);
-      
-      noStroke();
-      fill(0);
-      textSize(14);
+      noStroke(); fill(0);
       textAlign(CENTER, CENTER);
-      text(label, labelX, labelY);
+      if (l) text(l, (sx + ex) / 2, (sy + ey) / 2 - 5);
     }
-    
-    // Hàm vẽ self-loop cho state
-    function drawSelfLoop(x, y, label) {
-      stroke(0);
-      strokeWeight(1);
-      noFill();
-      
-      let r = 25;           // bán kính của node
-      let loopRadius = 40;  // bán kính của cung self-loop
-      let centerArcX = x;
-      let centerArcY = y - r - 10; // vòng cung đặt phía trên node
-      
-      let startAngle = 0.8 * PI;
-      let endAngle = 2.2 * PI;
-      
-      arc(centerArcX, centerArcY, loopRadius, loopRadius, startAngle, endAngle);
-      
-      let endX = centerArcX + (loopRadius / 2) * cos(endAngle);
-      let endY = centerArcY + (loopRadius / 2) * sin(endAngle);
-      
-      // Tính góc sao cho mũi tên self-loop "chỉ" về node
-      let arrowAngle = atan2(y - endY, x - endX);
-      let arrowLength = 10;
-      let offsetBack = 5;
-      let arrowX = endX + cos(arrowAngle) * (arrowLength - offsetBack);
-      let arrowY = endY + sin(arrowAngle) * (arrowLength - offsetBack);
-      
-      push();
-      translate(arrowX, arrowY);
-      rotate(arrowAngle);
-      fill(0);
-      stroke(0);
-      triangle(0, 0, -10, 5, -10, -5);
-      pop();
-      
-      noStroke();
-      fill(0);
-      textSize(14);
+    function drawSelfLoop(x, y, l) {
+      stroke(0); strokeWeight(1); noFill();
+      let rr = 25, lr = 40, cx = x, cy = y - rr - 10;
+      arc(cx, cy, lr, lr, 0.8 * PI, 2.2 * PI);
+      let m = (0.8 * PI + 2.2 * PI) / 2;
+      noStroke(); fill(0);
       textAlign(CENTER, CENTER);
-      
-      // Xử lý label: nếu có nhiều ký hiệu, ghép chúng bằng dấu phẩy
-      let processedLabel = label;
-      if (!label.includes(",") && label.length > 1) {
-        processedLabel = label.split('').join(',');
-      }
-      // Đặt label tại giữa cung với offset dọc điều chỉnh để tránh chồng lên
-      let midAngle = (startAngle + endAngle) / 2;
-      let midX = centerArcX + (loopRadius / 2) * cos(midAngle);
-      let midY = centerArcY + (loopRadius / 2) * sin(midAngle);
-      let offsetY = processedLabel.includes(",") ? 15 : 10;
-      text(processedLabel, midX, midY - offsetY);
+      text(l, cx + (lr / 2) * cos(m), cy + (lr / 2) * sin(m) - 10);
     }
-    
-    // Hàm vẽ lại toàn bộ DFA
-    // Có tham số optional finalColor để vẽ final state khi kết thúc mô phỏng
-    function redrawDFA(finalColor) {
-      clear();
-      background(240);
-      if (states.length === 0) return;
+    function redrawDFA(fc) {
+      clear(); background(240);
+      if (!states.length) return;
       computeStatePositions();
-      
-      // Vẽ các chuyển tiếp
-      let loopLabels = {}; // key: state, value: mảng các ký hiệu tự chuyển
-      for (let state of states) {
-        for (let symbol of values) {
-          let nextState = transitionTable[state] ? transitionTable[state][symbol] : null;
-          if (nextState) {
-            if (state === nextState) {
-              if (!loopLabels[state]) {
-                loopLabels[state] = [];
-              }
-              loopLabels[state].push(symbol);
-            } else {
-              let pos1 = statePositions[state];
-              let pos2 = statePositions[nextState];
-              // Vẽ arrow với màu cam nếu đang chuyển trạng thái
-              drawArrow(pos1.x, pos1.y, pos2.x, pos2.y, symbol);
-            }
-          }
-        }
+
+      // Vẽ mũi tên chỉ từ bên phải vào start state
+      if (startState && statePositions[startState]) {
+        const p0 = statePositions[startState];
+        const fromX = p0.x + 80, fromY = p0.y;
+        drawArrow(fromX, fromY, p0.x, p0.y, '');
       }
-      
-      // Vẽ self-loop cho các state có self-loop
-      for (let state in loopLabels) {
-        let pos = statePositions[state];
-        let labelStr = loopLabels[state].join(",");
-        drawSelfLoop(pos.x, pos.y, labelStr);
-      }
-      
-      // Vẽ các state (node)
-      for (let state of states) {
-        let pos = statePositions[state];
-        
-        // Nếu đang trong quá trình mô phỏng và đây là state hiện hành:
-        if(state === simulationCurrentState && simulationIndex < simulationInput.length) {
-          stroke("#FFA500"); // màu cam nhạt
-          strokeWeight(3);
-          fill("#FFE5B4");
-        } 
-        // Nếu kết thúc mô phỏng và đây là final state:
-        else if(finalColor && state === simulationCurrentState) {
-          stroke(finalColor);
-          strokeWeight(3);
-          fill(finalColor);
+
+      // Vẽ transitions và loops
+      let loops = {};
+      states.forEach(s => values.forEach(v => {
+        const n = transitionTable[s]?.[v];
+        if (!n) return;
+        if (s === n) {
+          (loops[s] = loops[s] || []).push(v);
         } else {
-          stroke(0);
-          strokeWeight(1);
-          fill(255);
+          drawArrow(statePositions[s].x, statePositions[s].y,
+                    statePositions[n].x, statePositions[n].y, v);
         }
-        ellipse(pos.x, pos.y, 50, 50);
-        fill(0);
-        noStroke();
+      }));
+      Object.keys(loops).forEach(s =>
+        drawSelfLoop(statePositions[s].x, statePositions[s].y, loops[s].join(','))
+      );
+
+      // Vẽ các trạng thái
+      states.forEach(s => {
+        const p = statePositions[s];
+        if (s === simulationCurrentState && simulationIndex < simulationInput.length) {
+          stroke('#FFA500'); strokeWeight(3); fill('#FFE5B4');
+        } else if (fc && s === simulationCurrentState) {
+          stroke(fc); strokeWeight(3); fill(fc);
+        } else {
+          stroke(0); strokeWeight(1); fill(255);
+        }
+        ellipse(p.x, p.y, 50, 50);
+        noStroke(); fill(0);
         textAlign(CENTER, CENTER);
-        text(state, pos.x, pos.y);
-      }
-      
-      // Đánh dấu các state chấp nhận
-      for (let state of finalStates) {
-        let pos = statePositions[state];
-        // Nếu đã kết thúc mô phỏng và state hiện tại trùng với final state, nó đã được highlight ở trên
-        if(finalColor && state === simulationCurrentState) continue;
-        stroke(0);
-        strokeWeight(1);
-        noFill();
-        ellipse(pos.x, pos.y, 60, 60);
-        ellipse(pos.x, pos.y, 60, 60);
-      }
+        text(s, p.x, p.y);
+      });
+
+      // Vẽ vòng ngoài cho final states
+      finalStates.forEach(s => {
+        const p = statePositions[s];
+        if (fc && s === simulationCurrentState) return;
+        stroke(0); strokeWeight(1); noFill();
+        ellipse(p.x, p.y, 60, 60);
+      });
     }
-    
-    // Hỗ trợ kéo node (drag & drop)
+
+    // Drag & drop states
     let dragged = null;
     function mousePressed() {
-      // Kiểm tra nếu chuột nhấn gần 1 node nào (khoảng cách < 25)
-      for (let state in statePositions) {
-        let pos = statePositions[state];
-        if (dist(mouseX, mouseY, pos.x, pos.y) < 25) {
-          dragged = state;
-          break;
+      for (let s in statePositions) {
+        const p = statePositions[s];
+        if (dist(mouseX, mouseY, p.x, p.y) < 25) {
+          dragged = s; break;
         }
       }
     }
-    
     function mouseDragged() {
       if (dragged) {
         statePositions[dragged] = { x: mouseX, y: mouseY };
-        redrawDFA();
+        redrawDFA(simulationFinalColor);
       }
     }
-    
-    function mouseReleased() {
-      dragged = null;
-    }
-    
+    function mouseReleased() { dragged = null; }
     function windowResized() {
       resizeCanvas(windowWidth * 0.6, windowHeight);
-      redrawDFA();
+      redrawDFA(simulationFinalColor);
     }
-    
-    function draw() {
-      background(240);
-    }
-    
+    function draw() {}
   </script>
 </body>
 </html>
