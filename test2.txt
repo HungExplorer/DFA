@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DFA</title>
+  <link rel="icon" href="Symbol.png">
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    /* Use Grid */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      display: grid;
+      height: 100vh;
+      grid-template-rows: 50px 1fr;
+      grid-template-columns: 150px 300px 1fr;
+      grid-template-areas:
+        "sidebar settings toolbar"
+        "sidebar settings canvas";
+    }
+    #sidebar button:hover { background: #1abc9c; }
+
+    #toolbar {
+      grid-area: toolbar;
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 10px;
+    }
+
+    #sidebar {
+      grid-area: sidebar;
+      background: #2c3e50;
+      color: #ecf0f1;
+      padding: 10px;
+      overflow-y: auto;
+    }
+
+    #settings {
+      grid-area: settings;
+      background: #f7f9fa;
+      padding: 20px;
+      overflow-y: auto;
+      border-right: 1px solid #ccc;
+    }
+
+    #canvasContainer {
+      grid-area: canvas;
+      position: relative;
+      background: #fafafa;
+    }
+
+    /* toolbar buttons */
+    #toolbar button {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: #34495e;
+    }
+    #toolbar button:hover { color: #3498db; }
+
+    /* hide save until table generated */
+    #saveDFABtn { display: none; }
+
+    .mode-btn {
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0;
+      background: #34495e;
+      color: #ecf0f1;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+    }
+    .mode-btn.active { background: #1abc9c; }
+
+    /* settings form */
+    #settings h2 { margin-top: 0; }
+    #settings label {
+      display: block;
+      margin-top: 12px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    #settings input[type="text"] {
+      width: 100%;
+      margin-top: 4px;
+      padding: 6px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #settings button {
+      margin-top: 10px;
+      padding: 6px 12px;
+      border: none;
+      background: #3b82f6;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #settings button:hover { background: #2563eb; }
+
+    #transitionTableDiv { margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #999; padding: 4px; text-align: center; }
+    #result { margin-top: 12px; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button id="btnImportJSON" title="Import JSON"><i class="fas fa-file-import"></i></button>
+    <button id="btnDownload" title="Download DFA"><i class="fas fa-download"></i></button>
+    <button id="btnExportJSON" title="Export JSON"><i class="fas fa-file-export"></i></button>
+    <input type="file" id="fileInput" accept="application/json" style="display:none" />
+  </div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <h3>DFA Feature</h3>
+    <button class="mode-btn active" data-mode="DFA">SimuCheck</button>
+    <button class="mode-btn" data-mode="TinyFA">TiCleaner</button>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings">
+    <h2>Settings</h2>
+
+    <label>States (Q):</label>
+    <input type="text" id="statesInput" placeholder="Enter states separated by space">
+
+    <label>Input Values (Σ):</label>
+    <input type="text" id="valuesInput" placeholder="Enter input symbols separated by space">
+
+    <label>Initial State:</label>
+    <input type="text" id="startStateInput" placeholder="Enter start state">
+
+    <label>Final State(s) (F):</label>
+    <input type="text" id="finalStatesInput" placeholder="Enter accepting state(s)">
+
+    <button id="generateTableBtn">Generate Transition Table</button>
+    <div id="transitionTableDiv"></div>
+    <button id="saveDFABtn">Save DFA Settings</button>
+
+    <hr>
+
+    <label>Input String to Check:</label>
+    <input type="text" id="inputString" placeholder="Enter input string">
+    <button id="checkStringBtn">Check String</button>
+    <button id="resetBtn">Reset Settings</button>
+
+    <div id="result"></div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvasContainer"></div>
+
+  <script>
+    let states = [], values = [], startState = "", finalStates = [], transitionTable = {};
+    let simulationCurrentState = null, simulationIndex = 0, simulationInput = "", simulationTimer = null, simulationFinalColor = null;
+
+    // Import/Export JSON
+    document.getElementById('btnImportJSON').onclick = () => document.getElementById('fileInput').click();
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader(); reader.onload = evt => loadDFA(JSON.parse(evt.target.result));
+      reader.readAsText(file); e.target.value = '';
+    });
+    function loadDFA(dfa) {
+      states = dfa.states || [];
+      values = dfa.values || [];
+      startState = dfa.startState || '';
+      finalStates = dfa.finalStates || [];
+      transitionTable = dfa.transitionTable || {};
+      document.getElementById('statesInput').value = states.join(' ');
+      document.getElementById('valuesInput').value = values.join(' ');
+      document.getElementById('startStateInput').value = startState;
+      document.getElementById('finalStatesInput').value = finalStates.join(' ');
+      document.getElementById('generateTableBtn').click();
+    }
+    document.getElementById('btnExportJSON').onclick = () => {
+      const obj = { states, values, startState, finalStates, transitionTable };
+      const blob = new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download='dfa.json'; a.click(); URL.revokeObjectURL(url);
+    };
+    document.getElementById('btnDownload').onclick = () => saveCanvas('dfa','png');
+
+    // Generate table (removed header text)
+    document.getElementById('generateTableBtn').addEventListener('click', () => {
+      states = document.getElementById('statesInput').value.trim().split(/\s+/);
+      values = document.getElementById('valuesInput').value.trim().split(/\s+/);
+      let html = '<table><tr><th>State</th>' + values.map(v=>`<th>${v}</th>`).join('') + '</tr>';
+      states.forEach(s=>{
+        html += '<tr><td>' + s + '</td>' +
+                values.map(v=>`<td><input type="text" id="trans-${s}-${v}" placeholder="next state"></td>`).join('') +
+                '</tr>';
+      });
+      html += '</table>';
+      document.getElementById('transitionTableDiv').innerHTML = html;
+      document.getElementById('saveDFABtn').style.display = 'inline-block';
+    });
+
+    // Save settings
+    document.getElementById('saveDFABtn').addEventListener('click', () => {
+      startState = document.getElementById('startStateInput').value.trim();
+      finalStates = document.getElementById('finalStatesInput').value.trim().split(/\s+/);
+      transitionTable = {};
+      states.forEach(s => { transitionTable[s] = {}; values.forEach(v => transitionTable[s][v] = document.getElementById(`trans-${s}-${v}`).value.trim() || null); });
+      simulationCurrentState = startState; simulationIndex = 0; simulationFinalColor = null;
+      redrawDFA();
+    });
+
+    // Simulate
+    function simulateDFA() {
+      if (!simulationInput) { document.getElementById('result').innerText = 'Please enter an input string.'; return; }
+      if (simulationIndex >= simulationInput.length) {
+        const accepted = finalStates.includes(simulationCurrentState);
+        document.getElementById('result').innerText = accepted ? '✅ ACCEPT' : '❌ REJECT';
+        simulationFinalColor = accepted ? '#00FF00' : '#FF0000'; redrawDFA(simulationFinalColor); return;
+      }
+      const ch = simulationInput.charAt(simulationIndex);
+      if (!values.includes(ch)) { document.getElementById('result').innerText = `Invalid input symbol: ${ch}`; return; }
+      const nxt = transitionTable[simulationCurrentState]?.[ch] || null;
+      if (!nxt) { document.getElementById('result').innerText = `No transition from '${simulationCurrentState}' on '${ch}'`; simulationFinalColor = '#FF0000'; redrawDFA(simulationFinalColor); return; }
+      simulationCurrentState = nxt; simulationIndex++;
+      redrawDFA('#FFA500'); simulationTimer = setTimeout(simulateDFA, 1000);
+    }
+    document.getElementById('checkStringBtn').addEventListener('click', () => {
+      simulationInput = document.getElementById('inputString').value.trim();
+      simulationCurrentState = startState; simulationIndex = 0; simulationFinalColor = null;
+      document.getElementById('result').innerText = '';
+      redrawDFA(); simulateDFA();
+    });
+
+    // Reset
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      ['statesInput','valuesInput','startStateInput','finalStatesInput','inputString'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('transitionTableDiv').innerHTML = '';
+      document.getElementById('result').innerText = '';
+      states = []; values = []; startState = ''; finalStates = [];
+      transitionTable = {}; simulationInput = ''; simulationIndex = 0;
+      simulationCurrentState = null; simulationFinalColor = null; statePositions = {};
+      document.getElementById('saveDFABtn').style.display = 'none';
+      redrawDFA();
+    });
+
+    // p5.js drawing
+    let statePositions = {};
+    function setup() { let c = createCanvas(windowWidth*0.6, windowHeight); c.parent('canvasContainer'); angleMode(RADIANS); noLoop(); }
+    function computeStatePositions() { if (Object.keys(statePositions).length === 0) { let cx = width/2, cy = height/2, r = min(width, height)/3; states.forEach((s,i) => { let a = map(i,0,states.length,0,TWO_PI); statePositions[s] = { x: cx+r*cos(a), y: cy+r*sin(a) }; }); } }
+    function drawArrow(x1,y1,x2,y2,l) { let a = atan2(y2-y1, x2-x1), r = 25; let sx = x1+r*cos(a), sy = y1+r*sin(a), ex = x2-r*cos(a), ey = y2-r*sin(a); stroke(0); strokeWeight(1); line(sx,sy,ex,ey); push(); translate(ex,ey); rotate(a); fill(0); triangle(0,0,-10,5,-10,-5); pop(); noStroke(); fill(0); textAlign(CENTER,CENTER); text(l,(sx+ex)/2,(sy+ey)/2-5); }
+    function drawSelfLoop(x,y,l) { stroke(0); strokeWeight(1); noFill(); let rr=25, lr=40, cx=x, cy=y-rr-10; arc(cx,cy,lr,lr,0.8*PI,2.2*PI); let m = (0.8*PI+2.2*PI)/2; noStroke(); fill(0); textAlign(CENTER,CENTER); text(l, cx+(lr/2)*cos(m), cy+(lr/2)*sin(m)-10); }
+    function redrawDFA(fc) { clear(); background(240); if (!states.length) return; computeStatePositions(); let loops = {}; states.forEach(s => values.forEach(v => { let n = transitionTable[s]?.[v]; if (!n) return; if (s===n) { (loops[s]||(loops[s]=[])).push(v); } else { drawArrow(statePositions[s].x, statePositions[s].y, statePositions[n].x, statePositions[n].y, v); } })); Object.keys(loops).forEach(s => { drawSelfLoop(statePositions[s].x, statePositions[s].y, loops[s].join(',')); }); states.forEach(s => { let p = statePositions[s]; if (s===simulationCurrentState && simulationIndex<simulationInput.length) { stroke('#FFA500'); strokeWeight(3); fill('#FFE5B4'); } else if (fc && s===simulationCurrentState) { stroke(fc); strokeWeight(3); fill(fc); } else { stroke(0); strokeWeight(1); fill(255); } ellipse(p.x,p.y,50,50); noStroke(); fill(0); textAlign(CENTER,CENTER); text(s,p.x,p.y); }); finalStates.forEach(s => { let p = statePositions[s]; if (fc && s===simulationCurrentState) return; stroke(0); strokeWeight(1); noFill(); ellipse(p.x,p.y,60,60); }); }
+    let dragged = null; function mousePressed() { for (let s in statePositions) { let p = statePositions[s]; if (dist(mouseX,mouseY,p.x,p.y) < 25) { dragged = s; break; } } }
+    function mouseDragged() { if (dragged) { statePositions[dragged] = { x: mouseX, y: mouseY }; redrawDFA(simulationFinalColor); } }
+    function mouseReleased() { dragged = null; }
+    function windowResized() { resizeCanvas(windowWidth*0.6, windowHeight); redrawDFA(simulationFinalColor); }
+    function draw() {}
+  </script>
+</body>
+</html>
