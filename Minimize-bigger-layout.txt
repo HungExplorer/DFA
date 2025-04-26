@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DFA Minimizer</title>
+  <link rel="icon" href="Symbol.png">
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <style>
+    body {
+      margin:0; padding:0; font-family:Arial;
+      display:grid; height:100vh;
+      grid-template-rows:50px 1fr;
+      grid-template-columns:150px 1fr;
+      grid-template-areas:
+        "sidebar main"
+        "sidebar main";
+    }
+    #sidebar {
+      grid-area:sidebar;
+      background:#2c3e50; color:#ecf0f1; padding:10px;
+    }
+    #main {
+      grid-area:main;
+      background:#f7f9f9; padding:20px;
+      overflow-y:auto;
+    }
+    #toolbar { display:none; } /* không dùng toolbar nữa */
+    h2 { margin-top:0; }
+    label { display:block; margin-top:12px; font-weight:bold; }
+    input, textarea {
+      width:100%; padding:6px; margin-top:4px;
+      box-sizing:border-box; border:1px solid #ccc;
+      border-radius:4px; font-size:14px;
+    }
+    button {
+      margin-top:10px; padding:6px 12px;
+      border:none; background:#3b82f6; color:white;
+      border-radius:4px; cursor:pointer;
+    }
+    button:hover { background:#2563eb; }
+    #generateTableBtn, #saveDFABtn {
+      width:48%; display:inline-block;
+    }
+    #generateTableBtn { margin-right:4%; }
+    #transitionTableDiv,
+    #partitionHistoryDiv {
+      margin-top:10px;
+    }
+    table {
+      width:100%; border-collapse:collapse;
+      margin-top:10px;
+    }
+    th, td {
+      border:1px solid #999; padding:4px;
+      text-align:center;
+    }
+    input.trans-in {
+      width:100%; border:none;
+      text-align:center;
+    }
+    #stepControls { margin-top:20px; }
+    #canvasContainer {
+      margin-top:20px;
+      width:100%; height:300px;
+      background:#fafafa; position:relative;
+    }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h3>DFA</h3>
+    <button class="mode-btn active">Minimize</button>
+  </div>
+  <div id="main">
+    <h2>1. Input DFA</h2>
+    <label>States (Q):</label>
+    <input id="statesInput" placeholder="q0, q1, q2" />
+    <label>Alphabet (Σ):</label>
+    <input id="valuesInput" placeholder="0, 1" />
+    <label>Initial State:</label>
+    <input id="startStateInput" placeholder="q0" />
+    <label>Final State(s) (F):</label>
+    <input id="finalStatesInput" placeholder="q2, q3" />
+    <button id="generateTableBtn">Generate Transition Table</button>
+    <div id="transitionTableDiv"></div>
+    <button id="saveDFABtn" style="display:none;">Save DFA Settings</button>
+
+    <div id="stepControls" style="display:none;">
+      <h2>2. Minimization Steps</h2>
+      <button id="btnStep">Next Step</button>
+      <button id="btnReset">Reset</button>
+    </div>
+
+    <div id="partitionHistoryDiv"></div>
+
+    <!-- Canvas vẽ graph sẽ nằm ở đây -->
+    <div id="canvasContainer"></div>
+  </div>
+
+<script>
+// ==== GLOBALS ====
+let states = [], values = [], startState = '', finalStates = [];
+let transitionTable = {}, pairs = [], marks = {}, prevMarks = {};
+let step = 0, converged = false;
+const partitionRecords = [];
+let minStates = [], minTrans = {}, minStart = '', minFinals = [];
+let statePositions = {}, graphReady = false, dragged = null;
+
+// ---- Step 1: Build input table ----
+document.getElementById('generateTableBtn').onclick = () => {
+  states = document.getElementById('statesInput').value.trim().split(/[,\s]+/);
+  values = document.getElementById('valuesInput').value.trim().split(/[,\s]+/);
+  let html = '<table><tr><th></th>' 
+           + values.map(v => `<th>${v}</th>`).join('') 
+           + '</tr>';
+  states.forEach(s => {
+    html += `<tr><th>${s}</th>`
+         + values.map(v => `<td><input class="trans-in" id="t-${s}-${v}" placeholder="q?"></td>`).join('')
+         + '</tr>';
+  });
+  html += '</table>';
+  document.getElementById('transitionTableDiv').innerHTML = html;
+  document.getElementById('saveDFABtn').style.display = 'inline-block';
+};
+
+// ---- Step 2: Save DFA và init minimization ----
+document.getElementById('saveDFABtn').onclick = () => {
+  startState = document.getElementById('startStateInput').value.trim();
+  finalStates = document.getElementById('finalStatesInput').value.trim().split(/[,\s]+/);
+
+  transitionTable = {};
+  states.forEach(s => {
+    transitionTable[s] = {};
+    values.forEach(v => {
+      transitionTable[s][v] = document.getElementById(`t-${s}-${v}`).value.trim() || null;
+    });
+  });
+
+  // Tạo all-pairs
+  pairs = [];
+  for (let i = 0; i < states.length; i++)
+    for (let j = 0; j < i; j++)
+      pairs.push([states[i], states[j]].sort());
+
+  marks = {};
+  pairs.forEach(p => { marks[p.join()] = -1; });
+  prevMarks = {};
+  step = 0; converged = false;
+  partitionRecords.length = 0;
+
+  // Partition ban đầu
+  const nonF = states.filter(s => !finalStates.includes(s));
+  partitionRecords.push({ level: 0, nonF: [nonF], f: [finalStates] });
+  renderPartitionHistory();
+  document.getElementById('stepControls').style.display = 'block';
+  drawStep();
+};
+
+// ---- Step 3: Mark & refine ----
+document.getElementById('btnStep').onclick = () => {
+  if (converged) return;
+
+  if (step === 0) {
+    pairs.forEach(p => {
+      const [a, b] = p;
+      if (finalStates.includes(a) !== finalStates.includes(b))
+        marks[p.join()] = 0;
+    });
+  } else {
+    // copy marks cũ
+    prevMarks = {};
+    for (let k in marks) prevMarks[k] = marks[k];
+
+    pairs.forEach(p => {
+      const key = p.join();
+      if (marks[key] >= 0) return;
+      for (let v of values) {
+        const r0 = transitionTable[p[0]][v],
+              r1 = transitionTable[p[1]][v];
+        if (r0 && r1) {
+          const k2 = [r0, r1].sort().join();
+          if (marks[k2] >= 0) {
+            marks[key] = step;
+            break;
+          }
+        }
+      }
+    });
+
+    recordPartition(step);
+    renderPartitionHistory();
+  }
+
+  drawStep();
+  // kiểm tra dừng
+  if (step > 0) {
+    let same = true;
+    for (let k in marks) {
+      if (marks[k] !== prevMarks[k]) { same = false; break; }
+    }
+    if (same) {
+      converged = true;
+      buildMinDFA();
+      drawGraph();
+    }
+  }
+  step++;
+};
+
+// ---- Reset ----
+document.getElementById('btnReset').onclick = () => location.reload();
+
+// ---- Ghi lại partition mới ----
+function recordPartition(lvl) {
+  const parent = {};
+  states.forEach(s => parent[s] = s);
+
+  pairs.forEach(p => {
+    if (marks[p.join()] < 0) {
+      const [a, b] = p, pa = parent[a];
+      states.forEach(s => {
+        if (parent[s] === parent[b]) parent[s] = pa;
+      });
+    }
+  });
+
+  const groups = {};
+  states.forEach(s => {
+    const key = parent[s];
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  });
+
+  const nonFgr = [], Fgr = [];
+  for (let k in groups) {
+    const g = groups[k];
+    if (g.some(s => finalStates.includes(s))) Fgr.push(g);
+    else nonFgr.push(g);
+  }
+
+  partitionRecords.push({ level: lvl, nonF: nonFgr, f: Fgr });
+}
+
+// ---- Hiển thị Partition History ----
+function renderPartitionHistory() {
+  let html = '<h3>Partition History</h3><table><tr><th></th><th>!F</th><th>F</th></tr>';
+  partitionRecords.forEach(rec => {
+    const nf = rec.nonF.map(g => `{${g.join(',')}}`).join(' ');
+    const f  = rec.f   .map(g => `{${g.join(',')}}`).join(' ');
+    html += `<tr><td>${rec.level}-equiv</td><td>${nf}</td><td>${f}</td></tr>`;
+  });
+  html += '</table>';
+  document.getElementById('partitionHistoryDiv').innerHTML = html;
+}
+
+// ---- Xây Minimal DFA ----
+function buildMinDFA() {
+  const last = partitionRecords[partitionRecords.length - 1];
+  const classes = last.nonF.concat(last.f);
+
+  minStates = classes.map(g => g.join(','));
+  minStart  = classes.find(g => g.includes(startState)).join(',');
+  minFinals = classes.filter(g => g.some(s => finalStates.includes(s)))
+                     .map(g => g.join(','));
+
+  minTrans = {};
+  classes.forEach((g,i) => {
+    const name = minStates[i];
+    minTrans[name] = {};
+    values.forEach(v => {
+      const to = transitionTable[g[0]][v];
+      const idx = classes.findIndex(h => h.includes(to));
+      minTrans[name][v] = (idx >= 0 ? minStates[idx] : null);
+    });
+  });
+}
+
+// ==== p5.js draw ==== 
+function setup(){
+  const cont = document.getElementById('canvasContainer');
+  createCanvas(cont.clientWidth, 300).parent('canvasContainer');
+  angleMode(RADIANS);
+  noLoop();
+}
+
+function drawStep(){
+  clear(); background(240);
+  if (!states.length) return;
+  const off=60, cell=50;
+  textSize(16); fill(0);
+
+  // tên trạng thái
+  states.forEach((s,i) => {
+    textAlign(CENTER,CENTER);
+    text(s, off + i*cell + cell/2, off/2);
+    text(s, off/2, off + i*cell + cell/2);
+  });
+
+  // vẽ ma trận
+  for (let i=0; i<states.length; i++) {
+    for (let j=0; j<states.length; j++) {
+      const x = off + j*cell, y = off + i*cell;
+      stroke(0); noFill(); rect(x,y,cell,cell);
+      if (i<=j) {
+        noStroke(); fill('#ccc');
+        textAlign(CENTER,CENTER);
+        text('X', x+cell/2, y+cell/2);
+      } else {
+        const m = marks[[states[i],states[j]].sort().join()];
+        if (m>=0) {
+          noStroke(); fill('#e74c3c');
+          textAlign(CENTER,CENTER);
+          text(m, x+cell/2, y+cell/2);
+        }
+      }
+    }
+  }
+}
+
+// tính vị trí các trạng thái cho graph
+function computeStatePositions(){
+  if (Object.keys(statePositions).length) return;
+  const cx=width/2, cy=height/2, r=min(width,height)/3;
+  minStates.forEach((s,i)=>{
+    const a = map(i,0,minStates.length,0,TWO_PI);
+    statePositions[s] = { x: cx + r*cos(a), y: cy + r*sin(a) };
+  });
+}
+
+// vẽ arrow với nhãn đẩy xa
+function drawArrow(x1,y1,x2,y2,l){
+  const a=atan2(y2-y1,x2-x1), R=25;
+  const sx=x1+R*cos(a), sy=y1+R*sin(a);
+  const ex=x2-R*cos(a), ey=y2-R*sin(a);
+  stroke(0); strokeWeight(1);
+  line(sx,sy,ex,ey);
+  push(); translate(ex,ey); rotate(a);
+    fill(0); triangle(0,0,-10,5,-10,-5);
+  pop();
+  if(l){
+    const mx=(sx+ex)/2, my=(sy+ey)/2;
+    let nx = sy - ey, ny = ex - sx;
+    const len = sqrt(nx*nx+ny*ny)||1;
+    nx/=len; ny/=len;
+    const off = 12;
+    noStroke(); fill(0);
+    textAlign(CENTER,CENTER);
+    text(l, mx+nx*off, my+ny*off);
+  }
+}
+
+// vẽ self-loop với nhãn cách vòng
+function drawSelfLoop(x,y,l){
+  stroke(0); strokeWeight(1); noFill();
+  const rr=25, lr=40;
+  arc(x,y-rr-10,lr,lr,0.8*PI,2.2*PI);
+  if(l){
+    noStroke(); fill(0);
+    const mid=(0.8*PI+2.2*PI)/2;
+    const rad=lr/2+10;
+    textAlign(CENTER,CENTER);
+    text(l, x+rad*cos(mid), y-rr-10+rad*sin(mid));
+  }
+}
+
+// vẽ đồ thị minimal DFA
+function drawGraph(){
+  clear(); background(240);
+  computeStatePositions();
+  // mũi tên chỉ start
+  if(minStart){
+    const p=statePositions[minStart];
+    drawArrow(p.x+80,p.y,p.x,p.y,'');
+  }
+  // gom nhãn theo cặp (from->to)
+  const edgeMap = {};
+  minStates.forEach(s=>{
+    values.forEach(v=>{
+      const t = minTrans[s][v];
+      if(!t) return;
+      const key = s+'->'+t;
+      if(!edgeMap[key]) edgeMap[key]={from:s,to:t,labels:[]};
+      edgeMap[key].labels.push(v);
+    });
+  });
+  // vẽ
+  for(let k in edgeMap){
+    const e = edgeMap[k];
+    const lab = e.labels.join(',');
+    const p1 = statePositions[e.from], p2 = statePositions[e.to];
+    if(e.from===e.to) drawSelfLoop(p1.x,p1.y,lab);
+    else             drawArrow(p1.x,p1.y,p2.x,p2.y,lab);
+  }
+  // vẽ nút và final
+  minStates.forEach(s=>{
+    const p=statePositions[s];
+    stroke(0); strokeWeight(1); fill(255);
+    ellipse(p.x,p.y,50);
+    noStroke(); fill(0); textAlign(CENTER,CENTER);
+    text(s,p.x,p.y);
+  });
+  minFinals.forEach(s=>{
+    const p=statePositions[s];
+    noFill(); stroke(0); strokeWeight(1);
+    ellipse(p.x,p.y,60);
+  });
+  graphReady = true;
+}
+
+// cho phép kéo thả
+function mousePressed(){
+  if(!graphReady) return;
+  for(let s in statePositions){
+    const p = statePositions[s];
+    if(dist(mouseX,mouseY,p.x,p.y)<25){ dragged = s; break; }
+  }
+}
+function mouseDragged(){
+  if(dragged){
+    statePositions[dragged] = { x:mouseX, y:mouseY };
+    drawGraph();
+  }
+}
+function mouseReleased(){ dragged = null; }
+
+// resize khi đổi kích thước
+function windowResized(){
+  const cont = document.getElementById('canvasContainer');
+  resizeCanvas(cont.clientWidth, 300);
+  graphReady ? drawGraph() : drawStep();
+}
+</script>
+</body>
+</html>
