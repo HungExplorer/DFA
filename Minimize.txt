@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DFA Minimizer</title>
+  <link rel="icon" href="Symbol.png">
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <style>
+    body { margin:0; padding:0; font-family:Arial; display:grid; height:100vh;
+      grid-template-rows:50px 1fr; grid-template-columns:150px 300px 1fr;
+      grid-template-areas:"sidebar settings toolbar" "sidebar settings canvas";
+    }
+    #sidebar { grid-area:sidebar; background:#2c3e50; color:#ecf0f1; padding:10px; }
+    .mode-btn { width:100%; padding:8px; margin:4px 0; background:#34495e; color:#ecf0f1; border:none; text-align:left; cursor:pointer; }
+    .mode-btn.active { background:#1abc9c; }
+    #settings { grid-area:settings; background:#f7f9f9; padding:20px; overflow-y:auto; border-right:1px solid #ccc; }
+    #toolbar { grid-area:toolbar; background:#fff; border-bottom:1px solid #ddd; }
+    #canvasContainer { grid-area:canvas; background:#fafafa; position:relative; }
+    h2 { margin-top:0; }
+    label { display:block; margin-top:12px; font-weight:bold; }
+    input, textarea { width:100%; padding:6px; margin-top:4px; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; font-size:14px; }
+    button { margin-top:10px; padding:6px 12px; border:none; background:#3b82f6; color:white; border-radius:4px; cursor:pointer; }
+    button:hover { background:#2563eb; }
+    #generateTableBtn, #saveDFABtn { width:48%; display:inline-block; }
+    #generateTableBtn { margin-right:4%; }
+    #transitionTableDiv { margin-top:10px; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th, td { border:1px solid #999; padding:4px; text-align:center; }
+    input.trans-in { width:100%; border:none; text-align:center; }
+    #stepControls { margin-top:20px; }
+    #partitionHistoryDiv { margin-top:20px; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h3>DFA</h3>
+    <button class="mode-btn active">Minimize</button>
+  </div>
+  <div id="settings">
+    <h2>1. Input DFA</h2>
+    <label>States (Q):</label>
+    <input id="statesInput" placeholder="q0 q1 q2" />
+    <label>Alphabet (Σ):</label>
+    <input id="valuesInput" placeholder="0 1" />
+    <label>Initial State:</label>
+    <input id="startStateInput" placeholder="q0" />
+    <label>Final State(s) (F):</label>
+    <input id="finalStatesInput" placeholder="q2" />
+    <button id="generateTableBtn">Generate Transition Table</button>
+    <div id="transitionTableDiv"></div>
+    <button id="saveDFABtn" style="display:none;">Save DFA Settings</button>
+
+    <div id="stepControls" style="display:none;">
+      <h2>2. Minimization Steps</h2>
+      <button id="btnStep">Next Step</button>
+      <button id="btnReset">Reset</button>
+    </div>
+
+    <div id="partitionHistoryDiv"></div>
+  </div>
+  <div id="toolbar"></div>
+  <div id="canvasContainer"></div>
+
+<script>
+let states=[], values=[], startState='', finalStates=[];
+let transitionTable={}, pairs=[], marks={}, prevMarks={};
+let step=0, converged=false;
+const partitionRecords=[];
+let minStates=[], minTrans={}, minStart='', minFinals=[];
+
+// Step1: Generate table inputs
+document.getElementById('generateTableBtn').onclick = () => {
+  states = document.getElementById('statesInput').value.trim().split(/\s+/);
+  values = document.getElementById('valuesInput').value.trim().split(/\s+/);
+  let html = '<table><tr><th></th>' + values.map(v=>`<th>${v}</th>`).join('') + '</tr>';
+  states.forEach(s=>{
+    html += `<tr><th>${s}</th>` +
+      values.map(v=>`<td><input class="trans-in" id="t-${s}-${v}" placeholder="q?"></td>`).join('') +
+      '</tr>';
+  }); html += '</table>';
+  document.getElementById('transitionTableDiv').innerHTML = html;
+  document.getElementById('saveDFABtn').style.display='inline-block';
+};
+
+// Step2: Save DFA and init min
+document.getElementById('saveDFABtn').onclick = () => {
+  startState = document.getElementById('startStateInput').value.trim();
+  finalStates = document.getElementById('finalStatesInput').value.trim().split(/\s+/);
+  // build transition
+  transitionTable={};
+  states.forEach(s=>{ transitionTable[s]={}; values.forEach(v=>{
+    transitionTable[s][v] = document.getElementById(`t-${s}-${v}`).value.trim()||null;
+  });});
+  // init pairs
+  pairs=[];
+  for(let i=0;i<states.length;i++) for(let j=0;j<i;j++) pairs.push([states[i],states[j]]);
+  marks={}; pairs.forEach(p=>marks[p.join()]=-1);
+  prevMarks={}; step=0; converged=false; partitionRecords.length=0;
+  // record 0-equi partition
+  const nonF = states.filter(s=>!finalStates.includes(s));
+  const f = finalStates;
+  partitionRecords.push({level:0, nonF:[nonF], f:[f]});
+  renderPartitionHistory();
+  document.getElementById('stepControls').style.display='block';
+  drawStep();
+};
+
+// Step3: Next
+document.getElementById('btnStep').onclick = () => {
+  if(converged) return;
+  if(step===0) {
+    pairs.forEach(p=>{
+      const a=finalStates.includes(p[0]), b=finalStates.includes(p[1]);
+      if(a!==b) marks[p.join()]=0;
+    });
+  } else {
+    prevMarks={...marks};
+    pairs.forEach(p=>{
+      const key=p.join(); if(marks[key]>=0) return;
+      if(step===1) {
+        for(let v of values){
+          const r0=transitionTable[p[0]][v], r1=transitionTable[p[1]][v];
+          if(r0&&r1) {
+            const in0=finalStates.includes(r0), in1=finalStates.includes(r1);
+            if(in0!==in1) { marks[key]=1; break; }
+          }
+        }
+      } else {
+        for(let v of values){
+          const r0=transitionTable[p[0]][v], r1=transitionTable[p[1]][v];
+          if(r0&&r1) {
+            const k=[r0,r1].sort().join(); if(marks[k]>=0){ marks[key]=step; break; }
+          }
+        }
+      }
+    });
+  }
+  // record except 0-equi
+  if(step>0) recordPartition(step);
+  renderPartitionHistory(); drawStep();
+  // converge check
+  if(step>0 && JSON.stringify(marks)===JSON.stringify(prevMarks)){
+    converged=true;
+    // build minimal DFA
+    buildMinDFA();
+    drawGraph();
+  } else step++;
+};
+// Reset
+document.getElementById('btnReset').onclick = () => location.reload();
+
+// record partition
+function recordPartition(lvl){
+  const parent={}; states.forEach(s=>parent[s]=s);
+  pairs.forEach(p=>{ if(marks[p.join()]<0){ const[a,b]=p; const pa=parent[a]; states.forEach(s=>{ if(parent[s]===parent[b]) parent[s]=pa; }); }});
+  const groups={}; states.forEach(s=>{ const r=parent[s]; if(!groups[r]) groups[r]=[]; groups[r].push(s); });
+  const nonFgr=[], Fgr=[];
+  Object.values(groups).forEach(g=>{ if(g.some(s=>finalStates.includes(s))) Fgr.push(g); else nonFgr.push(g); });
+  partitionRecords.push({level:lvl, nonF:nonFgr, f:Fgr});
+}
+// render history
+function renderPartitionHistory(){
+  let html='<h3>Partition History</h3><table><tr><th></th><th>!F</th><th>F</th></tr>';
+  partitionRecords.forEach(rec=>{
+    const nf=rec.nonF.map(g=>`{${g.join(',')}}`).join(' ');
+    const f =rec.f.map(g=>`{${g.join(',')}}`).join(' ');
+    html+=`<tr><td>${rec.level}-equi</td><td>${nf}</td><td>${f}</td></tr>`;
+  }); html+='</table>';
+  document.getElementById('partitionHistoryDiv').innerHTML=html;
+}
+
+// build minimal DFA
+function buildMinDFA(){
+  const last=partitionRecords[partitionRecords.length-1];
+  const classes = last.nonF.concat(last.f);
+  minStates = classes.map(g=>g.join(','));
+  minStart = classes.find(g=>g.includes(startState)).join(',');
+  minFinals = classes.filter(g=>g.some(s=>finalStates.includes(s))).map(g=>g.join(','));
+  // transitions
+  minTrans = {};
+  classes.forEach((g,i)=>{
+    const name = minStates[i]; minTrans[name]={};
+    values.forEach(v=>{
+      const to = transitionTable[g[0]][v];
+      const idx = classes.findIndex(h=>h.includes(to));
+      minTrans[name][v] = idx>=0 ? minStates[idx] : null;
+    });
+  });
+}
+
+// p5.js draw matrix and graph support
+let off=60, cell=50;
+function setup(){ const c=createCanvas(windowWidth*0.6, windowHeight); c.parent('canvasContainer'); angleMode(RADIANS); noLoop(); }
+function windowResized(){ resizeCanvas(windowWidth*0.6, windowHeight); drawStep(); }
+function drawStep(){ clear(); background(240);
+  if(!states.length) return;
+  textSize(16); fill(0);
+  states.forEach((s,i)=>{ textAlign(CENTER,CENTER); text(s,off+i*cell+cell/2,off/2); text(s,off/2,off+i*cell+cell/2); });
+  for(let i=0;i<states.length;i++) for(let j=0;j<states.length;j++){
+    const x=off+j*cell,y=off+i*cell; stroke(0); noFill(); rect(x,y,cell,cell);
+    if(i<=j){ noStroke(); fill('#ccc'); textAlign(CENTER,CENTER); text('X',x+cell/2,y+cell/2);} else {
+      const m=marks[[states[i],states[j]].join()]; if(m>=0){ noStroke(); fill('#e74c3c'); textAlign(CENTER,CENTER); text(m,x+cell/2,y+cell/2);} }
+  }
+}
+
+// draw minimized graph
+enumArrow = {};
+function computeStatePositions(){
+  if(Object.keys(statePositions).length) return;
+  let cx=width/2, cy=height/2, r=min(width,height)/3;
+  minStates.forEach((s,i)=>{ let a=map(i,0,minStates.length,0,TWO_PI); statePositions[s]={x:cx+r*cos(a),y:cy+r*sin(a)}; });
+}
+function drawArrow(x1,y1,x2,y2,l){ let a=atan2(y2-y1,x2-x1),R=25; let sx=x1+R*cos(a),sy=y1+R*sin(a),ex=x2-R*cos(a),ey=y2-R*sin(a); stroke(0);strokeWeight(1);line(sx,sy,ex,ey);push();translate(ex,ey);rotate(a);fill(0);triangle(0,0,-10,5,-10,-5);pop();noStroke();fill(0);textAlign(CENTER,CENTER);if(l)text(l,(sx+ex)/2,(sy+ey)/2-5);} 
+function drawSelfLoop(x,y,l){stroke(0);strokeWeight(1);noFill();let rr=25,lr=40;arc(x,y-rr-10,lr,lr,0.8*PI,2.2*PI);noStroke();fill(0);textAlign(CENTER,CENTER);let m=(0.8*PI+2.2*PI)/2;text(l,x+(lr/2)*cos(m),y-rr-10+(lr/2)*sin(m)-10);}  
+let statePositions={}, graphReady=false;
+function drawGraph(){ clear(); background(240); if(!graphReady){ computeStatePositions(); graphReady=true;}  
+  // start arrow
+  if(minStart){ const p=statePositions[minStart]; drawArrow(p.x+80,p.y,p.x,p.y,''); }
+  // transitions
+  for(let s of minStates){ for(let v of values){ const t=minTrans[s][v]; if(!t) continue; if(s===t) drawSelfLoop(statePositions[s].x,statePositions[s].y,v); else drawArrow(statePositions[s].x,statePositions[s].y,statePositions[t].x,statePositions[t].y,v);} }
+  // states
+  minStates.forEach(s=>{ const p=statePositions[s]; stroke(0);strokeWeight(1);fill(255);ellipse(p.x,p.y,50,50); noStroke();fill(0);textAlign(CENTER,CENTER);text(s,p.x,p.y); });
+  // finals
+  minFinals.forEach(s=>{ const p=statePositions[s]; noFill();stroke(0);strokeWeight(1);ellipse(p.x,p.y,60,60); });
+}
+</script>
+</body>
+</html>
