@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DFA</title>
+  <link rel="icon" href="Symbol.png">
+  <!-- html2canvas để chụp canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- p5.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    body {
+      margin:0; padding:0; font-family:Arial;
+      display:grid; height:100vh;
+      grid-template-rows:50px 1fr;
+      grid-template-columns:300px 1fr;
+      grid-template-areas:
+        "settings toolbar"
+        "settings canvas";
+    }
+    /* Settings panel */
+    #settings {
+      grid-area: settings;
+      background: #f7f9fa;
+      padding: 20px;
+      overflow-y: auto;
+      border-right: 1px solid #ccc;
+    }
+    #settings h2 { margin-top:0; }
+    #settings label { display:block; margin-top:12px; font-weight:bold; font-size:14px; }
+    #settings input[type="text"] {
+      width:100%; margin-top:4px; padding:6px;
+      box-sizing:border-box; border:1px solid #ccc; border-radius:4px;
+      background:white; color:black;
+    }
+    #settings button {
+      margin-top:10px; padding:6px 12px;
+      border:none; background:#3b82f6; color:white; border-radius:4px;
+      cursor:pointer;
+    }
+    #settings button:hover { background:#2563eb; }
+
+    /* Toolbar */
+    #toolbar {
+      grid-area: toolbar;
+      background: #fff;
+      border-bottom:1px solid #ddd;
+      display:flex; align-items:center; padding:0 10px; gap:10px;
+    }
+    #toolbar button {
+      background:none; border:none;
+      font-size:18px; cursor:pointer; color:#34495e;
+    }
+    #toolbar button:hover { color:#3498db; }
+    #toolbar input[type="file"] { display:none; }
+
+    /* Input/check/reset on toolbar */
+    #toolbar input[type="text"] {
+      padding:4px 6px; border:1px solid #ccc; border-radius:4px;
+      font-size:14px;
+    }
+    #toolbar .check-btn, #toolbar .reset-btn, #toolbar .minimize-btn {
+      padding:5px 8px; 
+      border:none; 
+      border-radius:4px; 
+      cursor:pointer; 
+      font-size:14px;
+    }
+    #toolbar .check-btn { background:#1abc9c; color:white; }
+    #toolbar .reset-btn { background:#e74c3c; color:white; }
+    #toolbar .check-btn:hover { background:#16a085; color:white; }
+    #toolbar .reset-btn:hover { background:#c0392b; color:white; }
+    #toolbar .minimize-btn { background:#7f8c8d; color:white; }
+    #toolbar .minimize-btn:hover { background:#60686f; color:white;}
+    #toolbar #result { margin-left:10px; font-weight:bold; }
+
+    /* Warning alert */
+    .alert {
+      position: fixed;
+      top: 20px; right: 20px;
+      background: #fff3cd;
+      color: #856404;
+      border-left: 6px solid #ffc107;
+      padding: 10px 20px;
+      border-radius: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      display: flex; align-items: center;
+      transform: translateX(120%);
+      transition: transform 0.4s ease;
+      z-index: 1000;
+    }
+    .alert.show {
+      transform: translateX(0);
+    }
+    .alert .msg {
+      margin-left: 10px;
+      flex: 1;
+    }
+    .alert .close-btn {
+      margin-left: 15px;
+      cursor: pointer;
+    }
+
+    /* Canvas */
+    #canvasContainer {
+      grid-area: canvas;
+      position:relative;
+      background:#fafafa;
+    }
+
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th, td { border:1px solid #999; padding:4px; text-align:center; }
+    #transitionTableDiv { margin-top:10px; }
+    #saveDFABtn { display:none; }
+  </style>
+</head>
+<body>
+
+  <!-- Warning Alert -->
+  <div class="alert" id="warningBox">
+    <span class="fas fa-exclamation-circle"></span>
+    <span class="msg" id="warningMsg"></span>
+    <div class="close-btn" id="warningClose"><span class="fas fa-times"></span></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button id="btnImportJSON" title="Import JSON"><i class="fas fa-file-import"></i></button>
+    <button id="btnDownload"    title="Download DFA"><i class="fas fa-download"></i></button>
+    <button id="btnExportJSON"  title="Export JSON"><i class="fas fa-file-export"></i></button>
+    <input type="file" id="fileInput" accept="application/json" />
+
+    <input type="text"    id="inputString"  placeholder="Input string..." />
+    <button class="check-btn" id="checkStringBtn">Check</button>
+    <button class="reset-btn" id="resetBtn">Reset</button>
+    <button class="minimize-btn" id="minimizeBtn" title="Minimize Canvas">
+      Minimize
+    </button>
+    <span id="result"></span>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings">
+    <h2>Settings</h2>
+    <label>States (Q):</label>
+    <input type="text" id="statesInput" placeholder="Enter states separated by space">
+    <label>Input Values (Σ):</label>
+    <input type="text" id="valuesInput" placeholder="Enter input symbols separated by space">
+    <label>Initial State:</label>
+    <input type="text" id="startStateInput" placeholder="Enter start state">
+    <label>Final State(s) (F):</label>
+    <input type="text" id="finalStatesInput" placeholder="Enter accepting state(s)">
+    <button id="generateTableBtn">Generate Transition Table</button>
+    <div id="transitionTableDiv"></div>
+    <button id="saveDFABtn">Save DFA Settings</button>
+    <div id="importedImageContainer"></div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvasContainer"></div>
+
+  <script>
+    // ===== Warning box setup =====
+    const warningBox   = document.getElementById('warningBox');
+    const warningMsg   = document.getElementById('warningMsg');
+    const warningClose = document.getElementById('warningClose');
+    function showWarning(msg) {
+      warningMsg.innerText = msg;
+      warningBox.classList.add('show');
+      clearTimeout(warningBox._timeout);
+      warningBox._timeout = setTimeout(() => {
+        warningBox.classList.remove('show');
+      }, 3000);
+    }
+    warningClose.addEventListener('click', () => {
+      warningBox.classList.remove('show');
+    });
+
+    // ===== DFA logic & UI =====
+    let states = [], values = [], startState = "", finalStates = [], transitionTable = {};
+    let simulationCurrentState = null, simulationIndex = 0, simulationInput = "", simulationTimer = null, simulationFinalColor = null;
+
+    // IMPORT JSON
+    document.getElementById('btnImportJSON').onclick = () =>
+      document.getElementById('fileInput').click();
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const j = JSON.parse(ev.target.result);
+        const tt = j.transitionTable || {};
+        const sts = Object.keys(tt);
+        const vals = Array.from(sts.reduce((s,q)=>{
+          Object.keys(tt[q]||{}).forEach(a=>s.add(a));
+          return s;
+        }, new Set()));
+        document.getElementById('statesInput').value      = sts.join(' ');
+        document.getElementById('valuesInput').value      = vals.join(' ');
+        document.getElementById('startStateInput').value  = j.startState||'';
+        document.getElementById('finalStatesInput').value = (j.finalStates||[]).join(' ');
+        document.getElementById('generateTableBtn').click();
+        setTimeout(()=>{
+          sts.forEach(s=>{
+            vals.forEach(v=>{
+              const c = document.getElementById(`trans-${s}-${v}`);
+              if (c) c.value = tt[s][v]||'';
+            });
+          });
+          document.getElementById('saveDFABtn').click();
+        },50);
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    });
+
+    // EXPORT JSON
+    document.getElementById('btnExportJSON').onclick = () => {
+      const o = { transitionTable, startState, finalStates };
+      const b = new Blob([JSON.stringify(o,null,2)],{type:'application/json'});
+      const u = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = u; a.download = 'dfa-config.json'; a.click();
+      URL.revokeObjectURL(u);
+    };
+
+    // DOWNLOAD CANVAS
+    document.getElementById('btnDownload').onclick = () => {
+      html2canvas(document.getElementById('canvasContainer')).then(c=>{
+        const a = document.createElement('a');
+        a.href = c.toDataURL('image/png');
+        a.download = 'dfa.png';
+        a.click();
+      });
+    };
+
+    // GENERATE TRANSITION TABLE
+    document.getElementById('generateTableBtn').onclick = () => {
+      states = document.getElementById('statesInput').value.trim().split(/\s+/);
+      values = document.getElementById('valuesInput').value.trim().split(/\s+/);
+      let html = '<table><tr><th>State</th>' +
+                  values.map(v=>`<th>${v}</th>`).join('') +
+                 '</tr>';
+      states.forEach(s=>{
+        html += `<tr><td>${s}</td>` +
+                values.map(v=>`<td><input type="text" id="trans-${s}-${v}" placeholder="next state"></td>`).join('') +
+                '</tr>';
+      });
+      html += '</table>';
+      document.getElementById('transitionTableDiv').innerHTML = html;
+      document.getElementById('saveDFABtn').style.display = 'inline-block';
+    };
+
+    // SAVE DFA SETTINGS
+    document.getElementById('saveDFABtn').onclick = () => {
+      startState = document.getElementById('startStateInput').value.trim();
+      finalStates = document.getElementById('finalStatesInput').value.trim().split(/\s+/);
+      transitionTable = {};
+      states.forEach(s=>{
+        transitionTable[s] = {};
+        values.forEach(v=>{
+          transitionTable[s][v] = document.getElementById(`trans-${s}-${v}`).value.trim()||null;
+        });
+      });
+      simulationCurrentState = startState;
+      simulationIndex = 0;
+      simulationFinalColor = null;
+      redrawDFA();
+    };
+
+    // SIMULATE DFA
+    function simulateDFA() {
+      if (!simulationInput) {
+        showWarning('Please enter an input string.');
+        return;
+      }
+      if (simulationIndex >= simulationInput.length) {
+        const ok = finalStates.includes(simulationCurrentState);
+        simulationFinalColor = ok ? '#00FF00' : '#FF0000';
+        redrawDFA(simulationFinalColor);
+        return;
+      }
+      const ch = simulationInput.charAt(simulationIndex);
+      if (!values.includes(ch)) {
+        showWarning(`Invalid symbol: ${ch}`);
+        return;
+      }
+      const nxt = transitionTable[simulationCurrentState]?.[ch] || null;
+      if (!nxt) {
+        showWarning(`No transition from '${simulationCurrentState}' on '${ch}'`);
+        simulationFinalColor = '#FF0000';
+        redrawDFA(simulationFinalColor);
+        return;
+      }
+      simulationCurrentState = nxt;
+      simulationIndex++;
+      redrawDFA('#FFA500');
+      simulationTimer = setTimeout(simulateDFA, 500);
+    }
+
+    document.getElementById('checkStringBtn').onclick = () => {
+      simulationInput = document.getElementById('inputString').value.trim();
+      simulationCurrentState = startState;
+      simulationIndex = 0;
+      simulationFinalColor = null;
+      document.getElementById('result').innerText = '';
+      redrawDFA();
+      simulateDFA();
+    };
+
+    document.getElementById('resetBtn').onclick = () => {
+      document.getElementById('inputString').value = '';
+      simulationInput = ''; simulationIndex = 0; simulationFinalColor = null;
+      redrawDFA(); document.getElementById('result').innerText = '';
+    };
+
+    // p5.js DRAWING
+    let statePositions = {};
+    function setup() {
+      const c = createCanvas(windowWidth*0.6, windowHeight);
+      c.parent('canvasContainer');
+      angleMode(RADIANS);
+      noLoop();
+    }
+    function computeStatePositions() {
+      if (Object.keys(statePositions).length) return;
+      const cx=width/2, cy=height/2, r=min(width,height)/3;
+      states.forEach((s,i)=>{
+        const a = map(i,0,states.length,0,TWO_PI);
+        statePositions[s] = { x:cx+r*cos(a), y:cy+r*sin(a) };
+      });
+    }
+    function drawArrow(x1,y1,x2,y2,l) {
+      const a=atan2(y2-y1,x2-x1), R=25;
+      const sx=x1+R*cos(a), sy=y1+R*sin(a), ex=x2-R*cos(a), ey=y2-R*sin(a);
+      stroke(0); strokeWeight(1); line(sx,sy,ex,ey);
+      push(); translate(ex,ey); rotate(a);
+      fill(0); triangle(0,0,-10,5,-10,-5); pop();
+      noStroke(); fill(0); textAlign(CENTER,CENTER);
+      if (l) text(l,(sx+ex)/2,(sy+ey)/2-5);
+    }
+    function drawSelfLoop(x,y,l) {
+      stroke(0); strokeWeight(1); noFill();
+      arc(x,y-35,30,30,0.8*PI,2.2*PI);
+      noStroke(); fill(0); textAlign(CENTER,CENTER);
+      text(l, x, y-55);
+    }
+    function redrawDFA(fc) {
+      clear(); background(240);
+      if (!states.length) return;
+      computeStatePositions();
+      if (startState && statePositions[startState]) {
+        const p0=statePositions[startState];
+        drawArrow(p0.x+80,p0.y,p0.x,p0.y,'');
+      }
+      const loops={};
+      states.forEach(s=>{
+        values.forEach(v=>{
+          const n=transitionTable[s]?.[v];
+          if (!n) return;
+          if (s===n) (loops[s]=loops[s]||[]).push(v);
+          else drawArrow(
+            statePositions[s].x,statePositions[s].y,
+            statePositions[n].x,statePositions[n].y,v
+          );
+        });
+      });
+      Object.entries(loops).forEach(([s,arr])=>{
+        drawSelfLoop(statePositions[s].x,statePositions[s].y,arr.join(','));
+      });
+      states.forEach(s=>{
+        const p=statePositions[s];
+        if (s===simulationCurrentState && simulationIndex<simulationInput.length) {
+          stroke('#FFA500'); strokeWeight(3); fill('#FFE5B4');
+        } else if (fc && s===simulationCurrentState) {
+          stroke(fc); strokeWeight(3); fill(fc);
+        } else {
+          stroke(0); strokeWeight(1); fill(255);
+        }
+        ellipse(p.x,p.y,50,50);
+        noStroke(); fill(0); textAlign(CENTER,CENTER);
+        text(s,p.x,p.y);
+      });
+      finalStates.forEach(s=>{
+        const p=statePositions[s];
+        if (fc && s===simulationCurrentState) return;
+        stroke(0); strokeWeight(1); noFill();
+        ellipse(p.x,p.y,60,60);
+      });
+    }
+
+    // Drag & Drop
+    let dragged = null;
+    function mousePressed() {
+      for (let s in statePositions) {
+        const p=statePositions[s];
+        if (dist(mouseX,mouseY,p.x,p.y)<25) {
+          dragged=s; break;
+        }
+      }
+    }
+    function mouseDragged() {
+      if (dragged) {
+        statePositions[dragged]={ x:mouseX, y:mouseY };
+        redrawDFA(simulationFinalColor);
+      }
+    }
+    function mouseReleased() { dragged=null; }
+    function windowResized() {
+      resizeCanvas(windowWidth*0.6, windowHeight);
+      redrawDFA(simulationFinalColor);
+    }
+    function draw() {}
+  </script>
+</body>
+</html>
