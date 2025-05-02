@@ -338,7 +338,12 @@
       push(); translate(ex,ey); rotate(a);
       fill(0); triangle(0,0,-10,5,-10,-5); pop();
       noStroke(); fill(0); textAlign(CENTER,CENTER);
-      if (l) text(l,(sx+ex)/2,(sy+ey)/2-5);
+      if (l) {
+        // đặt nhãn gần nút nhận (x2,y2)
+        const lx = sx + 0.75*(ex - sx);
+        const ly = sy + 0.75*(ey - sy) - 5;
+        text(l, lx, ly);
+      }
     }
     function drawSelfLoop(x,y,l) {
       stroke(0); strokeWeight(1); noFill();
